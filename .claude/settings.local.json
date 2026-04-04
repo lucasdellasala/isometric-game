@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(export PATH=\"$HOME/.cargo/bin:$PATH\")",
+      "Bash(rustc --version)",
+      "Bash(cargo --version)",
+      "Bash(cargo init:*)",
+      "Bash(cargo run:*)",
+      "Bash(powershell -Command \"[Environment]::GetEnvironmentVariable\\('Path', 'User'\\)\")",
+      "Bash(cargo check:*)"
+    ]
+  }
+}
