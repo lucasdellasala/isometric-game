@@ -95,13 +95,16 @@ RPG/exploration with isometric view. Aesthetic similar to Fallout 1: pre-rendere
 | Milestone | Goal | Status |
 |-----------|------|--------|
 | **M1** | Window + game loop with fixed timestep | Done |
-| **M2** | Isometric tile renderer (iso projection, grid, camera scroll) | Pending |
-| **M3** | Sprites + correct depth sorting | Pending |
-| **M4** | Tilemap from file (RON or JSON) | Pending |
-| **M5** | Player entity + movement (click-to-move or WASD) | Pending |
-| **M6** | Camera following player + large map | Pending |
+| **M2** | Isometric tile renderer (iso projection, grid, camera scroll) | Done |
+| **M3** | Sprites + correct depth sorting | Done |
+| **M4** | Tilemap from file (JSON) | Done |
+| **M5** | Player entity + movement (WASD) | Done |
+| **M6** | Camera following player + large map + frustum culling | Pending |
 | **M7** | A* pathfinding on isometric grid | Pending |
 | **M8** | FOV / Shadowcasting (fog of war, line of sight) | Pending |
+
+### Known improvements (backlog)
+- **Smooth player movement:** Interpolate visual position between tiles instead of snapping tile-to-tile. Currently the player jumps between grid cells which feels laggy despite stable FPS.
 
 ### Technical concepts to master in Phase 2
 - Deterministic game loop: fixed timestep, update/render separation

@@ -5,6 +5,7 @@ use sdl2::video::Window;
 
 use crate::camera::Camera;
 use crate::iso::{grid_to_screen, TILE_HEIGHT, TILE_WIDTH};
+use crate::player::Player;
 use crate::tilemap::Tilemap;
 
 const SCREEN_CENTER_X: i32 = 400; // WINDOW_WIDTH / 2
@@ -80,8 +81,58 @@ fn fill_right_face(canvas: &mut Canvas<Window>, cx: i32, cy: i32, height: i32, c
     }
 }
 
-/// Draw the entire tilemap with correct depth sorting (back to front).
-pub fn draw_tilemap(canvas: &mut Canvas<Window>, tilemap: &Tilemap, cam: &Camera) {
+/// Draw the player as a colored diamond on the tile, raised slightly.
+fn draw_player(canvas: &mut Canvas<Window>, player: &Player, cam: &Camera) {
+    let (cx, cy) = to_screen(player.grid_x, player.grid_y, cam);
+
+    // Player body: a smaller diamond on top of the tile, raised up
+    let body_height = 20;
+    let body_half_w = TILE_WIDTH / 4;
+    let body_half_h = TILE_HEIGHT / 4;
+
+    // Base position: center of the tile, raised by body_height
+    let base_y = cy + TILE_HEIGHT / 2 - body_height;
+
+    // Draw body (filled rectangle-ish shape using lines)
+    let body_color = Color::RGB(200, 60, 60);
+    canvas.set_draw_color(body_color);
+    for y in 0..body_height {
+        let _ = canvas.draw_line(
+            Point::new(cx - body_half_w / 2, base_y + y),
+            Point::new(cx + body_half_w / 2, base_y + y),
+        );
+    }
+
+    // Draw head (small diamond on top)
+    let head_color = Color::RGB(240, 200, 150);
+    let head_size = 6;
+    for y in 0..head_size {
+        let w = if y < head_size / 2 { y } else { head_size - y };
+        canvas.set_draw_color(head_color);
+        let _ = canvas.draw_line(
+            Point::new(cx - w, base_y - head_size + y),
+            Point::new(cx + w, base_y - head_size + y),
+        );
+    }
+
+    // Shadow on the tile (small dark diamond)
+    let shadow_color = Color::RGBA(0, 0, 0, 80);
+    canvas.set_draw_color(shadow_color);
+    for y in 0..body_half_h {
+        let w = if y < body_half_h / 2 {
+            (y * body_half_w) / body_half_h
+        } else {
+            ((body_half_h - y) * body_half_w) / body_half_h
+        };
+        let _ = canvas.draw_line(
+            Point::new(cx - w, cy + TILE_HEIGHT / 2 - body_half_h / 2 + y),
+            Point::new(cx + w, cy + TILE_HEIGHT / 2 - body_half_h / 2 + y),
+        );
+    }
+}
+
+/// Draw the entire tilemap and player with correct depth sorting (back to front).
+pub fn draw_world(canvas: &mut Canvas<Window>, tilemap: &Tilemap, player: &Player, cam: &Camera) {
     // Draw back to front: low rows first, then high rows
     // This is the painter's algorithm for isometric rendering
     for row in 0..tilemap.rows {
@@ -98,6 +149,11 @@ pub fn draw_tilemap(canvas: &mut Canvas<Window>, tilemap: &Tilemap, cam: &Camera
             } else {
                 // Flat tile: just the diamond
                 fill_diamond(canvas, cx, cy, tile.top_color());
+            }
+
+            // Draw the player when we reach their row/col (correct depth order)
+            if col == player.grid_x && row == player.grid_y {
+                draw_player(canvas, player, cam);
             }
         }
     }

@@ -1,5 +1,6 @@
 mod camera;
 mod iso;
+mod player;
 mod renderer;
 mod tilemap;
 
@@ -9,6 +10,7 @@ use sdl2::pixels::Color;
 use std::time::{Duration, Instant};
 
 use camera::Camera;
+use player::Player;
 use tilemap::Tilemap;
 
 const WINDOW_WIDTH: u32 = 800;
@@ -18,6 +20,9 @@ const WINDOW_TITLE: &str = "Isometric Game";
 // Fixed timestep: 60 logic updates per second
 const TICKS_PER_SECOND: u32 = 60;
 const TICK_DURATION: Duration = Duration::from_nanos(1_000_000_000 / TICKS_PER_SECOND as u64);
+
+// Player movement: one step every N ticks (prevents moving too fast)
+const MOVE_COOLDOWN: u32 = 6;
 
 fn main() {
     // --- Load map from file ---
@@ -43,6 +48,8 @@ fn main() {
 
     // --- Game state ---
     let mut camera = Camera::new();
+    let mut player = Player::new(0, 0);
+    let mut move_timer: u32 = 0;
     let mut previous_time = Instant::now();
     let mut lag = Duration::ZERO;
     let mut running = true;
@@ -75,18 +82,35 @@ fn main() {
         let keyboard = event_pump.keyboard_state();
 
         while lag >= TICK_DURATION {
-            if keyboard.is_scancode_pressed(Scancode::Up) || keyboard.is_scancode_pressed(Scancode::W) {
-                camera.move_by(0, -1);
+            // Player movement with cooldown
+            if move_timer > 0 {
+                move_timer -= 1;
+            } else {
+                let mut moved = false;
+
+                if keyboard.is_scancode_pressed(Scancode::W) || keyboard.is_scancode_pressed(Scancode::Up) {
+                    player.try_move(0, -1, &tilemap);
+                    moved = true;
+                } else if keyboard.is_scancode_pressed(Scancode::S) || keyboard.is_scancode_pressed(Scancode::Down) {
+                    player.try_move(0, 1, &tilemap);
+                    moved = true;
+                } else if keyboard.is_scancode_pressed(Scancode::A) || keyboard.is_scancode_pressed(Scancode::Left) {
+                    player.try_move(-1, 0, &tilemap);
+                    moved = true;
+                } else if keyboard.is_scancode_pressed(Scancode::D) || keyboard.is_scancode_pressed(Scancode::Right) {
+                    player.try_move(1, 0, &tilemap);
+                    moved = true;
+                }
+
+                if moved {
+                    move_timer = MOVE_COOLDOWN;
+                }
             }
-            if keyboard.is_scancode_pressed(Scancode::Down) || keyboard.is_scancode_pressed(Scancode::S) {
-                camera.move_by(0, 1);
-            }
-            if keyboard.is_scancode_pressed(Scancode::Left) || keyboard.is_scancode_pressed(Scancode::A) {
-                camera.move_by(-1, 0);
-            }
-            if keyboard.is_scancode_pressed(Scancode::Right) || keyboard.is_scancode_pressed(Scancode::D) {
-                camera.move_by(1, 0);
-            }
+
+            // Camera follows player
+            let (target_x, target_y) = iso::grid_to_screen(player.grid_x, player.grid_y);
+            camera.x = target_x;
+            camera.y = target_y;
 
             lag -= TICK_DURATION;
         }
@@ -95,7 +119,7 @@ fn main() {
         canvas.set_draw_color(Color::RGB(20, 20, 40));
         canvas.clear();
 
-        renderer::draw_tilemap(&mut canvas, &tilemap, &camera);
+        renderer::draw_world(&mut canvas, &tilemap, &player, &camera);
 
         canvas.present();
 
