@@ -9,7 +9,7 @@ Multiplayer co-op D&D-style RPG with isometric graphics (Fallout 1 aesthetic). B
 ## Developer profile
 
 - **Background:** JavaScript, TypeScript, Node.js
-- **Rust level:** Intermediate — knows ownership, borrowing, structs, enums, traits, generics, closures, iterators, modules, serde. Does NOT know lifetimes, async/await, Arc/Mutex, trait objects yet.
+- **Rust level:** Intermediate — knows ownership, borrowing, structs, enums, traits, generics, closures, iterators, modules, serde. Now also knows lifetimes (`'a`) from P2 (SDL2 textures tied to TextureCreator).
 - **IDE:** Zed (rust-analyzer built-in)
 - **Environment:** Windows 10, Rust 1.94.1, CMake (Visual Studio 16 2019 generator)
 - **Goal:** Understand every line — not just make it work.
@@ -35,50 +35,73 @@ GameInput → GameState.apply_input() → GameState.tick() → Vec<GameEvent>
 - Audio/VFX react to `GameEvent` values
 - This IS the client-server boundary — networking (P9) becomes just transport
 
-### Current code architecture (pre-P1)
-
-All state lives as `mut` variables in `main()`. Will be extracted to `GameState` in P1.
+### Current code architecture (post-P1, post-P2)
 
 ```
-main.rs (game loop)
+main.rs (thin game loop — ~130 lines)
   │
-  ├─ INPUT: SDL2 event pump → keyboard state + mouse clicks
-  │   ├─ Mouse click → iso::screen_to_grid() → player.move_to() (A* pathfinding)
-  │   └─ WASD held → player.try_move() (direct 1-tile move, cancels path)
+  ├─ Creates: GameState, AssetManager, Camera (client-only)
+  │
+  ├─ INPUT: SDL2 events → translated to GameInput enum
+  │   ├─ Mouse click → iso::screen_to_grid() → GameInput::MoveTo
+  │   ├─ WASD held → GameInput::MoveDirection
+  │   └─ Escape → quit
   │
   ├─ UPDATE (fixed timestep, 60 ticks/sec):
-  │   ├─ player.update() → advances path queue + lerps visual position
-  │   ├─ camera.x/y = player.visual_x/y (smooth follow)
-  │   └─ fov_map.compute() → 8-octant shadowcasting from player position
+  │   ├─ state.apply_input(GameInput) → processes movement/pathfinding
+  │   ├─ state.tick() → advances entities, updates FOV, returns Vec<GameEvent>
+  │   └─ camera.x/y = local_player.visual_x/y (smooth follow)
   │
   └─ RENDER:
-      ├─ For each tile (row by row, back to front):
-      │   ├─ iso::grid_to_screen() - camera offset → screen position
-      │   ├─ Frustum cull (skip if off-screen)
-      │   ├─ fov brightness → darken color
-      │   └─ Draw filled diamond (scanline fill) + 3D side faces if wall
-      ├─ Draw click target marker (yellow diamond)
-      └─ Draw player (red body + head) on top of everything
+      └─ renderer::draw_world(&canvas, &GameState, &Camera, &mut AssetManager)
+          ├─ For each tile (row by row, back to front):
+          │   ├─ Frustum cull → skip off-screen tiles
+          │   ├─ FOV brightness → texture.set_color_mod() for darkening
+          │   └─ canvas.copy() tile texture (PNG or generated placeholder)
+          ├─ Draw click target marker
+          └─ Draw all entities on top (currently no depth interleaving — fix in P3)
 ```
 
 ### Key technical decisions
 - **Scancode vs Keycode:** Using `Scancode` for movement (physical key position, layout-independent)
-- **FOV uses distance falloff, not lerp:** Lerp-based FOV transition caused motion sickness. Distance falloff (100% brightness in inner 50% of radius, linear fade to edge) is instant but looks smooth because edges are already dim
-- **Player draws on top of everything:** Known issue — proper depth interleaving caused flickering due to visual interpolation. Will fix in P3 with row-by-row entity sorting
-- **Frustum culling:** Only draw tiles within screen bounds + 64px margin. Took 200x200 map from 4fps to 76fps
+- **FOV uses distance falloff, not lerp:** Lerp-based FOV transition caused motion sickness. Distance falloff (100% brightness in inner 50% of radius, linear fade to edge) is instant but smooth
+- **Entities draw on top of everything:** Known issue — proper depth interleaving caused flickering due to visual interpolation. Fix in P3 with row-by-row entity sorting
+- **Frustum culling:** Only draw tiles within screen bounds + 64px margin. 200x200 map at 76fps
+- **SDL2_image not used:** The `sdl2` crate's `image` feature requires precompiled SDL2_image lib. Instead, we use the `image` crate (pure Rust) to decode PNGs and create SDL2 textures from surfaces
+- **Texture darkening:** Using `texture.set_color_mod(b, b, b)` instead of overlay rectangles — overlays leaked into transparent areas of diamond tiles
+- **Wall rendering:** Currently uses line-drawn parallelogram side faces + textured top. Full pre-rendered wall sprites (64x64) are loaded when available but need rotation/direction fixes (P3)
 
 ### Source files
 
 | File | Lines | What it does |
 |------|-------|-------------|
-| `main.rs` | ~170 | SDL2 init, game loop (input→update→render), owns all mut state |
-| `renderer.rs` | ~220 | `draw_world()`: tiles (filled diamonds + 3D walls), player sprite, click marker, FOV darkening. Takes canvas size dynamically for resize support |
+| `main.rs` | ~130 | SDL2 init, thin game loop: poll events → GameInput → apply → tick → render. Creates AssetManager with TextureCreator lifetime |
+| `game_state.rs` | ~110 | `GameState` struct owns: tilemap, `Vec<Entity>`, fov_map, click_target. Methods: `apply_input()`, `tick()`, `spawn_entity()`, `local_player()`. Spawns player at (0,0) and test NPC at (4,3) |
+| `entity.rs` | ~130 | `Entity` struct with `id: u64`, `EntityKind` (Player/Npc/Enemy), grid + visual position, pathfinding queue, move cooldown. `try_move()`, `move_to()` (A*), `update()` (path advancement + lerp) |
+| `input.rs` | ~17 | `GameInput` enum (MoveDirection, MoveTo) and `GameEvent` enum (EntityMoved, PathNotFound) — the client/server message boundary |
+| `assets.rs` | ~170 | `AssetManager<'a>` with lifetime tied to `TextureCreator`. Generates placeholder diamond textures at startup. `load_image()` loads real PNGs via `image` crate → SDL2 surface → texture. Falls back to placeholders if files missing |
+| `renderer.rs` | ~200 | `draw_world()` takes `&GameState` + `&mut AssetManager`. Tiles via `canvas.copy()` with `set_color_mod` for FOV. Walls: line-drawn side faces or full sprite. Entities drawn on top |
 | `fov.rs` | ~170 | `FovMap::compute()`: 8-octant recursive shadowcasting. `brightness: Vec<f64>` per tile with distance falloff. Walls (height > 0) block vision |
-| `pathfinding.rs` | ~130 | `find_path()`: A* with Manhattan heuristic, 4-directional, `BinaryHeap` (reversed ordering for min-heap). Returns `Vec<Pos>` excluding start |
-| `player.rs` | ~120 | `Player` struct: grid position (logical) + visual position (lerped f64). `try_move()` for WASD, `move_to()` for click (runs A*). `update()` advances path + lerps. Cooldown prevents rapid-click speed exploit |
+| `pathfinding.rs` | ~130 | `find_path()`: A* with Manhattan heuristic, 4-directional, `BinaryHeap` (reversed for min-heap). Returns `Vec<Pos>` excluding start |
 | `tilemap.rs` | ~90 | `Tilemap` from JSON via serde. `TileKind` enum: Grass/Dirt/Water/Wall. Each has `top_color()`, `side_color()`, `height()`. Flat `Vec` with `row * cols + col` indexing |
-| `iso.rs` | ~20 | `grid_to_screen(x,y)→(sx,sy)` and `screen_to_grid(sx,sy)→(x,y)`. Tile size: 64x32. Formula: `sx = (x-y)*32, sy = (x+y)*16` |
+| `iso.rs` | ~20 | `grid_to_screen(x,y)→(sx,sy)` and `screen_to_grid(sx,sy)→(x,y)`. Tile: 64x32. Formula: `sx = (x-y)*32, sy = (x+y)*16` |
 | `camera.rs` | ~12 | `Camera { x, y }` — viewport offset. Follows `player.visual_x/y` each tick |
+
+### Assets structure
+```
+assets/
+  map.json            — 32x32 test map (Grass, Dirt, Water, Wall)
+  map_large.json      — 200x200 generated map (for perf testing)
+  tiles/
+    Ground/           — Real isometric tiles from Woulette's RPG tileset (itch.io)
+      ground_stone.png      — 64x32 stone floor (used as Grass tile)
+      ground_dungeon.png    — 64x32 dungeon floor (used as Dirt tile)
+      wall_stone_left_64x32.png   — 64x64 wall with left face
+      wall_stone_right_64x32.png  — 64x64 wall with right face
+      (+ variants and cap pieces)
+    Decor/            — Props (chests, bones, lanterns) — spritesheets, not yet integrated
+  characters/         — Empty, awaiting character sprites
+```
 
 ### Constants
 - Tile size: 64x32 pixels (TILE_WIDTH, TILE_HEIGHT in iso.rs)
@@ -94,9 +117,9 @@ main.rs (game loop)
 
 | Phase | Goal | Status |
 |-------|------|--------|
-| **P1** | GameState architecture — entity system, input/event pattern | **Next** |
-| **P2** | Real sprites — PNG textures, AssetManager | Pending |
-| **P3** | Multiple entities + depth fix — NPCs, interaction, text UI | Pending |
+| **P1** | GameState architecture — entity system, input/event pattern | **Done** |
+| **P2** | Real sprites — PNG textures, AssetManager with lifetimes | **Done** |
+| **P3** | Multiple entities + depth fix — NPCs, interaction, text UI | **Next** |
 | **P4** | Audio + polish — music, SFX, animated tiles, particles | Pending |
 | **P5** | D&D stats + inventory — character sheet, dice, items | Pending |
 | **P6** | Turn-based combat + AI — initiative, actions, attacks | Pending |
@@ -106,23 +129,40 @@ main.rs (game loop)
 | **P10** | Map editor — visual tool for content creation | Pending |
 
 ### Dependencies per phase
-P1: none | P2: sdl2 `image` | P3: sdl2 `ttf` | P4: sdl2 `mixer` | P5: `rand` | P6-P8: none | P9: `tokio`, `bincode` | P10: none
+P1: none | P2: `image` crate | P3: sdl2 `ttf` | P4: sdl2 `mixer` | P5: `rand` | P6-P8: none | P9: `tokio`, `bincode` | P10: none
 
 ---
 
-## Current Phase Detail — P1: GameState Architecture
+## Current Phase Detail — P3: Multiple Entities + Depth Sorting Fix
 
-**Goal:** Extract all state from main.rs into a `GameState` struct. Establish the input/event pattern that makes multiplayer possible later.
+**Goal:** NPCs on the map with correct depth sorting (entities behind walls are occluded). Basic interaction system and text UI.
 
-**What changes:**
-- `src/game_state.rs` (new) — `GameState` struct owns: tilemap, `Vec<Entity>`, fov_map, click_target. Methods: `apply_input(&mut self, GameInput)`, `tick(&mut self) -> Vec<GameEvent>`
-- `src/entity.rs` (new, replaces player.rs) — `Entity` struct with `id: u64`, `EntityKind` enum (Player/NPC/Enemy), grid + visual position, pathfinding state
-- `src/input.rs` (new) — `GameInput` enum: `MoveDirection { entity_id, dx, dy }`, `MoveTo { entity_id, target_x, target_y }`
-- `src/main.rs` — simplified to: SDL2 init → loop { poll events → translate to GameInput → apply → tick → render }
-- `src/renderer.rs` — takes `&GameState` instead of individual pieces
-- Add a second entity (NPC) standing on the map to prove multi-entity works
+**What needs to happen:**
 
-**Verification:** `cargo run` works identically to before. `main.rs` is ~50 lines. A second entity is visible.
+1. **Depth sorting fix** — Instead of drawing all tiles then all entities, interleave them by row. For each row: draw tiles, then draw entities whose visual position falls in that row. This makes entities go behind walls correctly. The previous attempt (using grid_y for draw order) caused flickering because visual_y interpolates between rows during movement. Need to compute effective visual row from the lerped position.
+
+2. **Directional wall tiles** — Current `TileKind::Wall` is a single type. Need to either:
+   - Add directional variants (`WallLeft`, `WallRight`, `WallTop`, etc.) to the JSON map format
+   - Or auto-detect wall direction based on neighboring tiles
+   - The tileset has separate `wall_stone_left` and `wall_stone_right` PNGs
+
+3. **NPC data in map JSON** — Extend the map format to include entity spawn points:
+   ```json
+   { "cols": 32, "rows": 32, "tiles": [...], "entities": [
+     { "kind": "Npc", "name": "Guide", "x": 4, "y": 3 }
+   ]}
+   ```
+
+4. **Interaction system** — Press E when adjacent to NPC → triggers `GameInput::Interact { entity_id, target_id }` → `GameEvent::InteractionStarted`. For P3 this just shows a text box.
+
+5. **Text UI with SDL2_ttf** — Add `sdl2` `ttf` feature. Render dialogue text in a box at the bottom of the screen. Need to handle the SDL2_ttf bundling (similar issue to SDL2_image — may need to use a Rust-native font renderer instead).
+
+**Known issues to resolve:**
+- Wall sprites are currently rotated/misaligned — the left wall sprite is used for all walls regardless of orientation
+- Entity sprites are placeholder colored shapes (body + head) — will be replaced when character sprites are available
+- The `Decor/` props are spritesheets (2432x1216) — would need sprite region extraction to use individual props
+
+**Verification:** Entities correctly appear behind walls when walking past them. NPCs loaded from map JSON. Press E shows a text box with NPC name.
 
 ---
 
@@ -130,5 +170,8 @@ P1: none | P2: sdl2 `image` | P3: sdl2 `ttf` | P4: sdl2 `mixer` | P5: `rand` | P
 
 **The Rust Book:** https://doc.rust-lang.org/stable/book/
 
+**Rust concepts learned so far:**
+Variables, types, functions, macros, control flow, ownership, borrowing, slices, structs, enums, Option, Result, traits, generics, closures, iterators, modules, serde, **lifetimes (`'a`)**
+
 **Rust concepts not yet learned** (explain with JS/TS comparison before using):
-Lifetimes (`'a`) → P2 | Arc/Mutex → P9 | async/await → P9 | trait objects (`dyn Trait`) → TBD | `#[serde(skip)]` → P7
+Arc/Mutex → P9 | async/await → P9 | trait objects (`dyn Trait`) → TBD | `#[serde(skip)]` → P7
