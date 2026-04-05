@@ -11,7 +11,6 @@ pub fn grid_to_screen(grid_x: i32, grid_y: i32) -> (i32, i32) {
     (screen_x, screen_y)
 }
 
-#[allow(dead_code)] // Will be used for mouse click detection in M5
 /// Convert screen pixel coordinates back to grid coordinates.
 /// Useful for mouse clicks: "which tile did the player click?"
 pub fn screen_to_grid(screen_x: i32, screen_y: i32) -> (i32, i32) {

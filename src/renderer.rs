@@ -147,8 +147,24 @@ fn is_visible(cx: i32, cy: i32) -> bool {
         && cy < SCREEN_HEIGHT + CULL_MARGIN + TILE_HEIGHT
 }
 
+/// Draw a target marker (small yellow diamond) on a tile.
+fn draw_marker(canvas: &mut Canvas<Window>, grid_x: i32, grid_y: i32, cam: &Camera) {
+    let (cx, cy) = to_screen(grid_x, grid_y, cam);
+    let size = 6;
+    let center_y = cy + TILE_HEIGHT / 2;
+
+    canvas.set_draw_color(Color::RGB(255, 255, 0));
+    for y in 0..size {
+        let w = if y < size / 2 { y } else { size - y };
+        let _ = canvas.draw_line(
+            Point::new(cx - w, center_y - size / 2 + y),
+            Point::new(cx + w, center_y - size / 2 + y),
+        );
+    }
+}
+
 /// Draw the entire tilemap and player with correct depth sorting (back to front).
-pub fn draw_world(canvas: &mut Canvas<Window>, tilemap: &Tilemap, player: &Player, cam: &Camera) {
+pub fn draw_world(canvas: &mut Canvas<Window>, tilemap: &Tilemap, player: &Player, cam: &Camera, click_target: Option<(i32, i32)>) {
     // Draw all tiles first (back to front)
     for row in 0..tilemap.rows {
         for col in 0..tilemap.cols {
@@ -170,6 +186,11 @@ pub fn draw_world(canvas: &mut Canvas<Window>, tilemap: &Tilemap, player: &Playe
                 fill_diamond(canvas, cx, cy, tile.top_color());
             }
         }
+    }
+
+    // Draw click target marker
+    if let Some((tx, ty)) = click_target {
+        draw_marker(canvas, tx, ty, cam);
     }
 
     // Draw player on top of all tiles

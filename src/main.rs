@@ -1,15 +1,18 @@
 mod camera;
 mod iso;
+mod pathfinding;
 mod player;
 mod renderer;
 mod tilemap;
 
 use sdl2::event::Event;
 use sdl2::keyboard::Scancode;
+use sdl2::mouse::MouseButton;
 use sdl2::pixels::Color;
 use std::time::{Duration, Instant};
 
 use camera::Camera;
+use iso::screen_to_grid;
 use player::Player;
 use tilemap::Tilemap;
 
@@ -21,7 +24,7 @@ const WINDOW_TITLE: &str = "Isometric Game";
 const TICKS_PER_SECOND: u32 = 60;
 const TICK_DURATION: Duration = Duration::from_nanos(1_000_000_000 / TICKS_PER_SECOND as u64);
 
-// Player movement: one step every N ticks (prevents moving too fast)
+// Player movement: one step every N ticks (prevents moving too fast when using WASD)
 const MOVE_COOLDOWN: u32 = 6;
 
 fn main() {
@@ -50,6 +53,7 @@ fn main() {
     let mut camera = Camera::new();
     let mut player = Player::new(0, 0);
     let mut move_timer: u32 = 0;
+    let mut click_target: Option<(i32, i32)> = None;
     let mut previous_time = Instant::now();
     let mut lag = Duration::ZERO;
     let mut running = true;
@@ -74,6 +78,18 @@ fn main() {
                 Event::KeyDown { scancode: Some(Scancode::Escape), .. } => {
                     running = false;
                 }
+                Event::MouseButtonDown { mouse_btn: MouseButton::Left, x, y, .. } => {
+                    // Convert screen click to world coordinates, then to grid
+                    let world_x = x - (WINDOW_WIDTH as i32 / 2) + camera.x;
+                    let world_y = y - (WINDOW_HEIGHT as i32 / 4) + camera.y;
+                    let (grid_x, grid_y) = screen_to_grid(world_x, world_y);
+
+                    // Only pathfind to valid tiles
+                    if grid_x >= 0 && grid_x < tilemap.cols && grid_y >= 0 && grid_y < tilemap.rows {
+                        player.move_to(grid_x, grid_y, &tilemap);
+                        click_target = Some((grid_x, grid_y));
+                    }
+                }
                 _ => {}
             }
         }
@@ -82,32 +98,39 @@ fn main() {
         let keyboard = event_pump.keyboard_state();
 
         while lag >= TICK_DURATION {
-            // Player movement with cooldown
-            if move_timer > 0 {
-                move_timer -= 1;
-            } else {
-                let mut moved = false;
+            // Clear marker when player arrives
+            if !player.is_walking() && click_target.is_some() {
+                click_target = None;
+            }
 
-                if keyboard.is_scancode_pressed(Scancode::W) || keyboard.is_scancode_pressed(Scancode::Up) {
-                    player.try_move(0, -1, &tilemap);
-                    moved = true;
-                } else if keyboard.is_scancode_pressed(Scancode::S) || keyboard.is_scancode_pressed(Scancode::Down) {
-                    player.try_move(0, 1, &tilemap);
-                    moved = true;
-                } else if keyboard.is_scancode_pressed(Scancode::A) || keyboard.is_scancode_pressed(Scancode::Left) {
-                    player.try_move(-1, 0, &tilemap);
-                    moved = true;
-                } else if keyboard.is_scancode_pressed(Scancode::D) || keyboard.is_scancode_pressed(Scancode::Right) {
-                    player.try_move(1, 0, &tilemap);
-                    moved = true;
-                }
+            // WASD overrides pathfinding
+            if !player.is_walking() {
+                if move_timer > 0 {
+                    move_timer -= 1;
+                } else {
+                    let mut moved = false;
 
-                if moved {
-                    move_timer = MOVE_COOLDOWN;
+                    if keyboard.is_scancode_pressed(Scancode::W) || keyboard.is_scancode_pressed(Scancode::Up) {
+                        player.try_move(0, -1, &tilemap);
+                        moved = true;
+                    } else if keyboard.is_scancode_pressed(Scancode::S) || keyboard.is_scancode_pressed(Scancode::Down) {
+                        player.try_move(0, 1, &tilemap);
+                        moved = true;
+                    } else if keyboard.is_scancode_pressed(Scancode::A) || keyboard.is_scancode_pressed(Scancode::Left) {
+                        player.try_move(-1, 0, &tilemap);
+                        moved = true;
+                    } else if keyboard.is_scancode_pressed(Scancode::D) || keyboard.is_scancode_pressed(Scancode::Right) {
+                        player.try_move(1, 0, &tilemap);
+                        moved = true;
+                    }
+
+                    if moved {
+                        move_timer = MOVE_COOLDOWN;
+                    }
                 }
             }
 
-            // Smooth visual interpolation
+            // Advance pathfinding + smooth visual interpolation
             player.update();
 
             // Camera follows player's visual position (smooth)
@@ -121,7 +144,7 @@ fn main() {
         canvas.set_draw_color(Color::RGB(20, 20, 40));
         canvas.clear();
 
-        renderer::draw_world(&mut canvas, &tilemap, &player, &camera);
+        renderer::draw_world(&mut canvas, &tilemap, &player, &camera, click_target);
 
         canvas.present();
 
