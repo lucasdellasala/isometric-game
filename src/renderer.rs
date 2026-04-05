@@ -4,10 +4,9 @@ use sdl2::render::Canvas;
 use sdl2::video::Window;
 
 use crate::camera::Camera;
-use crate::fov::FovMap;
+use crate::entity::{Entity, EntityKind};
+use crate::game_state::GameState;
 use crate::iso::{grid_to_screen, TILE_HEIGHT, TILE_WIDTH};
-use crate::player::Player;
-use crate::tilemap::Tilemap;
 
 // Margin in pixels outside the screen to still draw tiles
 const CULL_MARGIN: i32 = 64;
@@ -23,8 +22,6 @@ fn fill_diamond(canvas: &mut Canvas<Window>, cx: i32, cy: i32, color: Color) {
     let half_w = TILE_WIDTH / 2;
     let half_h = TILE_HEIGHT / 2;
 
-    // Fill the diamond line by line (scanline fill)
-    // Top half: from top point down to the middle
     for y_offset in 0..half_h {
         let width_at_y = (y_offset * half_w) / half_h;
         let draw_y = cy + y_offset;
@@ -34,7 +31,6 @@ fn fill_diamond(canvas: &mut Canvas<Window>, cx: i32, cy: i32, color: Color) {
             Point::new(cx + width_at_y, draw_y),
         );
     }
-    // Bottom half: from middle down to the bottom point
     for y_offset in 0..half_h {
         let width_at_y = half_w - (y_offset * half_w) / half_h;
         let draw_y = cy + half_h + y_offset;
@@ -51,7 +47,6 @@ fn fill_left_face(canvas: &mut Canvas<Window>, cx: i32, cy: i32, height: i32, co
     let half_w = TILE_WIDTH / 2;
     let half_h = TILE_HEIGHT / 2;
 
-    // Left face: from bottom-left edge of diamond going down by `height`
     canvas.set_draw_color(color);
     for h in 0..height {
         let _ = canvas.draw_line(
@@ -66,8 +61,6 @@ fn fill_right_face(canvas: &mut Canvas<Window>, cx: i32, cy: i32, height: i32, c
     let half_w = TILE_WIDTH / 2;
     let half_h = TILE_HEIGHT / 2;
 
-    // Right face: from bottom-right edge of diamond going down by `height`
-    // Slightly darker than left face for depth
     let darker = Color::RGB(
         color.r.saturating_sub(30),
         color.g.saturating_sub(30),
@@ -82,21 +75,24 @@ fn fill_right_face(canvas: &mut Canvas<Window>, cx: i32, cy: i32, height: i32, c
     }
 }
 
-/// Draw the player as a colored diamond on the tile, raised slightly.
-fn draw_player(canvas: &mut Canvas<Window>, player: &Player, cam: &Camera, sw: i32, sh: i32) {
-    let cx = player.visual_x as i32 - cam.x + sw / 2;
-    let cy = player.visual_y as i32 - cam.y + sh / 4;
+/// Draw an entity sprite at its visual position.
+fn draw_entity(canvas: &mut Canvas<Window>, entity: &Entity, cam: &Camera, sw: i32, sh: i32) {
+    let cx = entity.visual_x as i32 - cam.x + sw / 2;
+    let cy = entity.visual_y as i32 - cam.y + sh / 4;
 
-    // Player body: a smaller diamond on top of the tile, raised up
     let body_height = 20;
     let body_half_w = TILE_WIDTH / 4;
     let body_half_h = TILE_HEIGHT / 4;
-
-    // Base position: center of the tile, raised by body_height
     let base_y = cy + TILE_HEIGHT / 2 - body_height;
 
-    // Draw body (filled rectangle-ish shape using lines)
-    let body_color = Color::RGB(200, 60, 60);
+    // Body color depends on entity kind
+    let body_color = match entity.kind {
+        EntityKind::Player => Color::RGB(200, 60, 60),   // Red
+        EntityKind::Npc => Color::RGB(60, 60, 200),      // Blue
+        EntityKind::Enemy => Color::RGB(200, 60, 200),   // Purple
+    };
+
+    // Draw body
     canvas.set_draw_color(body_color);
     for y in 0..body_height {
         let _ = canvas.draw_line(
@@ -105,7 +101,7 @@ fn draw_player(canvas: &mut Canvas<Window>, player: &Player, cam: &Camera, sw: i
         );
     }
 
-    // Draw head (small diamond on top)
+    // Draw head
     let head_color = Color::RGB(240, 200, 150);
     let head_size = 6;
     for y in 0..head_size {
@@ -117,7 +113,7 @@ fn draw_player(canvas: &mut Canvas<Window>, player: &Player, cam: &Camera, sw: i
         );
     }
 
-    // Shadow on the tile (small dark diamond)
+    // Shadow
     let shadow_color = Color::RGBA(0, 0, 0, 80);
     canvas.set_draw_color(shadow_color);
     for y in 0..body_half_h {
@@ -166,35 +162,28 @@ fn darken(color: Color, factor: f64) -> Color {
     )
 }
 
-/// Draw the entire tilemap and player with correct depth sorting (back to front).
-pub fn draw_world(
-    canvas: &mut Canvas<Window>,
-    tilemap: &Tilemap,
-    player: &Player,
-    cam: &Camera,
-    click_target: Option<(i32, i32)>,
-    fov: &FovMap,
-) {
+/// Draw the entire game world. Reads GameState immutably.
+pub fn draw_world(canvas: &mut Canvas<Window>, state: &GameState, cam: &Camera) {
     let (sw, sh) = canvas.output_size().unwrap_or((1280, 900));
     let sw = sw as i32;
     let sh = sh as i32;
 
-    // Draw all tiles first (back to front)
-    for row in 0..tilemap.rows {
-        for col in 0..tilemap.cols {
+    // Draw all tiles (back to front)
+    for row in 0..state.tilemap.rows {
+        for col in 0..state.tilemap.cols {
             let (cx, cy) = to_screen(col, row, cam, sw, sh);
 
             if !is_on_screen(cx, cy, sw, sh) {
                 continue;
             }
 
-            let dim = fov.get_brightness(col, row);
+            let dim = state.fov_map.get_brightness(col, row);
 
             if dim < 0.01 {
                 continue;
             }
 
-            let tile = tilemap.get(col, row);
+            let tile = state.tilemap.get(col, row);
             let height = tile.height();
 
             if height > 0 {
@@ -207,13 +196,15 @@ pub fn draw_world(
         }
     }
 
-    // Draw click target marker (only if bright enough)
-    if let Some((tx, ty)) = click_target {
-        if fov.get_brightness(tx, ty) > 0.5 {
+    // Draw click target marker
+    if let Some((tx, ty)) = state.click_target {
+        if state.fov_map.get_brightness(tx, ty) > 0.5 {
             draw_marker(canvas, tx, ty, cam, sw, sh);
         }
     }
 
-    // Draw player on top of all tiles
-    draw_player(canvas, player, cam, sw, sh);
+    // Draw all entities on top
+    for entity in &state.entities {
+        draw_entity(canvas, entity, cam, sw, sh);
+    }
 }

@@ -2,29 +2,44 @@ use crate::iso::grid_to_screen;
 use crate::pathfinding::{self, Pos};
 use crate::tilemap::{TileKind, Tilemap};
 
-// How fast the visual position catches up to the grid position (0.0 = frozen, 1.0 = instant)
 const LERP_SPEED: f64 = 0.2;
-
-// How many ticks to wait before advancing to the next path step
 const PATH_STEP_TICKS: u32 = 8;
 
-pub struct Player {
-    // Logical position (which tile the player is on)
+/// What kind of entity this is. Determines behavior and rendering.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum EntityKind {
+    Player,
+    Npc,
+    Enemy,
+}
+
+/// A game entity: player, NPC, or enemy. Has a position, visual interpolation,
+/// and optional pathfinding state.
+pub struct Entity {
+    pub id: u64,
+    pub kind: EntityKind,
+    pub name: String,
+    // Logical position (which tile the entity is on)
     pub grid_x: i32,
     pub grid_y: i32,
-    // Visual position (where the player is drawn, in screen pixels)
+    // Visual position (where the entity is drawn, in screen pixels)
     pub visual_x: f64,
     pub visual_y: f64,
-    // Pathfinding: list of positions to walk through
+    // Pathfinding state
     path: Vec<Pos>,
     path_index: usize,
     path_timer: u32,
+    // Movement cooldown for WASD-style input
+    pub move_timer: u32,
 }
 
-impl Player {
-    pub fn new(grid_x: i32, grid_y: i32) -> Player {
+impl Entity {
+    pub fn new(id: u64, kind: EntityKind, name: &str, grid_x: i32, grid_y: i32) -> Entity {
         let (sx, sy) = grid_to_screen(grid_x, grid_y);
-        Player {
+        Entity {
+            id,
+            kind,
+            name: String::from(name),
             grid_x,
             grid_y,
             visual_x: sx as f64,
@@ -32,11 +47,11 @@ impl Player {
             path: vec![],
             path_index: 0,
             path_timer: 0,
+            move_timer: 0,
         }
     }
 
-    /// Try to move the player by (dx, dy). Only moves if the target tile is walkable.
-    /// Cancels any active path.
+    /// Try to move one tile in a direction. Cancels any active path.
     pub fn try_move(&mut self, dx: i32, dy: i32, tilemap: &Tilemap) {
         self.clear_path();
 
@@ -47,8 +62,7 @@ impl Player {
             return;
         }
 
-        let tile = tilemap.get(new_x, new_y);
-        match tile {
+        match tilemap.get(new_x, new_y) {
             TileKind::Wall | TileKind::Water => return,
             _ => {}
         }
@@ -58,7 +72,8 @@ impl Player {
     }
 
     /// Set a pathfinding target. Calculates A* and starts walking.
-    pub fn move_to(&mut self, target_x: i32, target_y: i32, tilemap: &Tilemap) {
+    /// Returns true if a path was found.
+    pub fn move_to(&mut self, target_x: i32, target_y: i32, tilemap: &Tilemap) -> bool {
         let start = Pos { x: self.grid_x, y: self.grid_y };
         let goal = Pos { x: target_x, y: target_y };
 
@@ -66,30 +81,28 @@ impl Player {
             Some(path) => {
                 self.path = path;
                 self.path_index = 0;
-                // Keep existing timer to prevent speed exploit from rapid clicking
                 if self.path_timer == 0 {
                     self.path_timer = PATH_STEP_TICKS;
                 }
+                true
             }
             None => {
-                // No path found — do nothing
                 self.clear_path();
+                false
             }
         }
     }
 
-    /// Returns true if the player is currently following a path.
     pub fn is_walking(&self) -> bool {
         self.path_index < self.path.len()
     }
 
-    /// Cancel the current path.
     pub fn clear_path(&mut self) {
         self.path.clear();
         self.path_index = 0;
     }
 
-    /// Advance along the path (called every tick).
+    /// Advance pathfinding and smooth visual interpolation. Called every tick.
     pub fn update(&mut self) {
         // Follow path if active
         if self.is_walking() {
@@ -117,6 +130,11 @@ impl Player {
         }
         if (ty - self.visual_y).abs() < 0.5 {
             self.visual_y = ty;
+        }
+
+        // Tick down move cooldown
+        if self.move_timer > 0 {
+            self.move_timer -= 1;
         }
     }
 }
