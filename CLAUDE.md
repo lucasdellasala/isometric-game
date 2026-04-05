@@ -1,119 +1,128 @@
-# CLAUDE.md — Rust Learning + Isometric Game
+# CLAUDE.md — Multiplayer Isometric D&D RPG in Rust
 
 ## Project context
 
-I'm learning Rust coming from JavaScript/TypeScript (Node.js). I understand programming — types, functions, data structures, async, etc. — and I've already completed the Rust fundamentals (Phase 1).
-
-I'm now on **Phase 2 — building an isometric game** in the style of Fallout 1.
+Multiplayer co-op D&D-style RPG with isometric graphics (Fallout 1 aesthetic). Built from scratch in Rust with SDL2, no game engine. Developer learned Rust from JS/TS and completed the engine foundation. Now evolving it into a full game with 10 phases.
 
 ---
 
-## My developer profile
+## Developer profile
 
-- Languages I know: JavaScript, TypeScript, Node.js
-- Concepts I already understand from JS: types, interfaces, generics (TS), async/await, closures, modules, basic data structures
-- IDE: Zed (with built-in rust-analyzer)
-- Environment: Windows 10, Rust 1.94.1, Claude Code as assistant
-- I want to understand every line I write — not just make it work
+- **Background:** JavaScript, TypeScript, Node.js
+- **Rust level:** Intermediate — knows ownership, borrowing, structs, enums, traits, generics, closures, iterators, modules, serde. Does NOT know lifetimes, async/await, Arc/Mutex, trait objects yet.
+- **IDE:** Zed (rust-analyzer built-in)
+- **Environment:** Windows 10, Rust 1.94.1, CMake (Visual Studio 16 2019 generator)
+- **Goal:** Understand every line — not just make it work.
 
----
-
-## Phase 1 — Completed
-
-Rust concepts I've learned and understand:
-
-| Concept | Rust Book Chapter | Status |
-|---------|-------------------|--------|
-| Variables, mutability, `let` vs `const` | 3 | Done |
-| Data types (`i32`, `u8`, `f64`, `bool`, `&str`, `String`) | 3 | Done |
-| Functions, implicit return, macros vs functions | 3 | Done |
-| Control flow (`if` as expression, `match`, `for`, `loop`, `while`) | 3 | Done |
-| Ownership, move, Copy types | 4 | Done |
-| Borrowing (`&`, `&mut`), borrowing rules | 4 | Done |
-| Slices (`&str`, `&[T]`) | 4 | Done |
-| Structs, methods, `impl`, associated functions | 5 | Done |
-| Enums with data, exhaustive pattern matching | 6 | Done |
-| `Option<T>` (`Some`/`None`) | 6 | Done |
-| Collections: `Vec<T>`, `String`, `HashMap<K, V>` | 8 | Done |
-| Error handling: `Result<T, E>`, `panic!`, `?` operator | 9 | Done |
-| Traits, `impl Trait for Struct`, `derive`, trait bounds | 10 | Done |
-| Generics `<T>` | 10 | Done |
-| Closures (`\|x\| x + 1`), `move` | 13 | Done |
-| Iterators (`.iter()`, `.map()`, `.filter()`, `.collect()`, etc.) | 13 | Done |
-| Modules (`mod`, `use`, `pub`, folders with `mod.rs`, `crate::`) | 7 | Done |
-
-### Rust concepts I haven't learned yet
-
-These concepts will appear during Phase 2. **When any of them becomes necessary, explain it first with a small example before using it in the game, comparing with JS/TS.**
-
-| Concept | When it will appear |
-|---------|---------------------|
-| **Lifetimes (`'a`)** | When a struct stores references instead of owned data |
-| **Box, Rc, Arc** (smart pointers) | If we need dynamic polymorphism or shared data |
-| **trait objects (`dyn Trait`)** | If we need different types in the same collection |
-| **async/await** | Probably not in Phase 2, the game loop is synchronous |
-| **unsafe** | If SDL2 requires it in some binding |
-| **Lifetimes in structs** | When a struct needs to store a `&str` instead of `String` |
-| **Custom error types** | When the game's error handling grows |
-| **Closures as parameters (`Fn`, `FnMut`, `FnOnce`)** | When we pass callbacks to game systems |
+### Rules
+- Always respond in Spanish
+- Compare new Rust concepts with JS/TS equivalents
+- Explain the "why", not just the "how"
+- Prefer explicit code over idiomatic until both forms are known
+- When code doesn't compile, help read the error before giving the solution
+- If using a concept not yet learned, stop and explain first
 
 ---
 
-## Interaction rules
+## Architecture
 
-### Explanations
-- **Always compare with JS/TS** when introducing a new concept.
-- **Explain the "why"** behind design decisions, not just the "how".
-- If a concept has a chapter in The Rust Book, mention it.
-- **If a milestone requires a new concept** (from the table above), explain it first with a small example before using it in the game.
+### The Golden Rule
+```
+GameInput → GameState.apply_input() → GameState.tick() → Vec<GameEvent>
+```
+- `GameState` is pure logic — never knows about SDL2, textures, audio, or network
+- Renderer only reads `&GameState` (immutable)
+- Audio/VFX react to `GameEvent` values
+- This IS the client-server boundary — networking (P9) becomes just transport
 
-### Code
-- **Don't write code I can't explain.** Be ready to explain every line if I ask.
-- **Prefer explicit code over idiomatic code** until I know both forms. Show the explicit one first, the idiomatic one second.
-- **Always mentally compile before suggesting.** Don't suggest code the borrow checker will reject without warning.
-- Use `cargo check` and `cargo clippy` as feedback tools.
+### Current code architecture (pre-P1)
 
-### Pace
-- One concept at a time.
-- When something doesn't compile, **help me read the compiler error** instead of giving the solution directly.
-- If the code uses a concept I haven't seen, **stop and explain before continuing**.
+All state lives as `mut` variables in `main()`. Will be extracted to `GameState` in P1.
+
+```
+main.rs (game loop)
+  │
+  ├─ INPUT: SDL2 event pump → keyboard state + mouse clicks
+  │   ├─ Mouse click → iso::screen_to_grid() → player.move_to() (A* pathfinding)
+  │   └─ WASD held → player.try_move() (direct 1-tile move, cancels path)
+  │
+  ├─ UPDATE (fixed timestep, 60 ticks/sec):
+  │   ├─ player.update() → advances path queue + lerps visual position
+  │   ├─ camera.x/y = player.visual_x/y (smooth follow)
+  │   └─ fov_map.compute() → 8-octant shadowcasting from player position
+  │
+  └─ RENDER:
+      ├─ For each tile (row by row, back to front):
+      │   ├─ iso::grid_to_screen() - camera offset → screen position
+      │   ├─ Frustum cull (skip if off-screen)
+      │   ├─ fov brightness → darken color
+      │   └─ Draw filled diamond (scanline fill) + 3D side faces if wall
+      ├─ Draw click target marker (yellow diamond)
+      └─ Draw player (red body + head) on top of everything
+```
+
+### Key technical decisions
+- **Scancode vs Keycode:** Using `Scancode` for movement (physical key position, layout-independent)
+- **FOV uses distance falloff, not lerp:** Lerp-based FOV transition caused motion sickness. Distance falloff (100% brightness in inner 50% of radius, linear fade to edge) is instant but looks smooth because edges are already dim
+- **Player draws on top of everything:** Known issue — proper depth interleaving caused flickering due to visual interpolation. Will fix in P3 with row-by-row entity sorting
+- **Frustum culling:** Only draw tiles within screen bounds + 64px margin. Took 200x200 map from 4fps to 76fps
+
+### Source files
+
+| File | Lines | What it does |
+|------|-------|-------------|
+| `main.rs` | ~170 | SDL2 init, game loop (input→update→render), owns all mut state |
+| `renderer.rs` | ~220 | `draw_world()`: tiles (filled diamonds + 3D walls), player sprite, click marker, FOV darkening. Takes canvas size dynamically for resize support |
+| `fov.rs` | ~170 | `FovMap::compute()`: 8-octant recursive shadowcasting. `brightness: Vec<f64>` per tile with distance falloff. Walls (height > 0) block vision |
+| `pathfinding.rs` | ~130 | `find_path()`: A* with Manhattan heuristic, 4-directional, `BinaryHeap` (reversed ordering for min-heap). Returns `Vec<Pos>` excluding start |
+| `player.rs` | ~120 | `Player` struct: grid position (logical) + visual position (lerped f64). `try_move()` for WASD, `move_to()` for click (runs A*). `update()` advances path + lerps. Cooldown prevents rapid-click speed exploit |
+| `tilemap.rs` | ~90 | `Tilemap` from JSON via serde. `TileKind` enum: Grass/Dirt/Water/Wall. Each has `top_color()`, `side_color()`, `height()`. Flat `Vec` with `row * cols + col` indexing |
+| `iso.rs` | ~20 | `grid_to_screen(x,y)→(sx,sy)` and `screen_to_grid(sx,sy)→(x,y)`. Tile size: 64x32. Formula: `sx = (x-y)*32, sy = (x+y)*16` |
+| `camera.rs` | ~12 | `Camera { x, y }` — viewport offset. Follows `player.visual_x/y` each tick |
+
+### Constants
+- Tile size: 64x32 pixels (TILE_WIDTH, TILE_HEIGHT in iso.rs)
+- Fixed timestep: 60 ticks/sec (TICK_DURATION in main.rs)
+- Move cooldown: 6 ticks for WASD, 8 ticks between path steps
+- FOV radius: 10 tiles
+- Explored brightness: 0.35, falloff starts at 50% of radius
+- Window: starts maximized, resizable. Renderer reads `canvas.output_size()` dynamically
 
 ---
 
-## Phase 2 — Isometric Game (IN PROGRESS)
+## Roadmap — 10 Phases
 
-### Concept
-RPG/exploration with isometric view. Aesthetic similar to Fallout 1: pre-rendered 2D isometric graphics, tile-based, with fog of war and pathfinding.
+| Phase | Goal | Status |
+|-------|------|--------|
+| **P1** | GameState architecture — entity system, input/event pattern | **Next** |
+| **P2** | Real sprites — PNG textures, AssetManager | Pending |
+| **P3** | Multiple entities + depth fix — NPCs, interaction, text UI | Pending |
+| **P4** | Audio + polish — music, SFX, animated tiles, particles | Pending |
+| **P5** | D&D stats + inventory — character sheet, dice, items | Pending |
+| **P6** | Turn-based combat + AI — initiative, actions, attacks | Pending |
+| **P7** | Map transitions + save/load — connected world, interiors | Pending |
+| **P8** | Dialogue + story — branching trees, quests, flags | Pending |
+| **P9** | Multiplayer — tokio, client-server, up to 6 players co-op | Pending |
+| **P10** | Map editor — visual tool for content creation | Pending |
 
-### Tech stack
-- **Language:** Rust
-- **Graphics library:** SDL2 (`sdl2` crate with `bundled` feature)
-- **No game engine.** All rendering, game loop, and systems are custom code.
+### Dependencies per phase
+P1: none | P2: sdl2 `image` | P3: sdl2 `ttf` | P4: sdl2 `mixer` | P5: `rand` | P6-P8: none | P9: `tokio`, `bincode` | P10: none
 
-### Milestones
+---
 
-| Milestone | Goal | Status |
-|-----------|------|--------|
-| **M1** | Window + game loop with fixed timestep | Done |
-| **M2** | Isometric tile renderer (iso projection, grid, camera scroll) | Done |
-| **M3** | Sprites + correct depth sorting | Done |
-| **M4** | Tilemap from file (JSON) | Done |
-| **M5** | Player entity + movement (WASD) | Done |
-| **M6** | Camera following player + large map + frustum culling | Done |
-| **M7** | A* pathfinding on isometric grid | Done |
-| **M8** | FOV / Shadowcasting (fog of war, line of sight) | Done |
+## Current Phase Detail — P1: GameState Architecture
 
-### Known improvements (backlog)
-- ~~**Smooth player movement:** Interpolate visual position between tiles instead of snapping tile-to-tile.~~ Done.
-- **Player depth sorting with walls:** Player currently draws on top of everything. Need proper per-row depth interleaving that accounts for the visual interpolation position, not just grid position.
+**Goal:** Extract all state from main.rs into a `GameState` struct. Establish the input/event pattern that makes multiplayer possible later.
 
-### Technical concepts to master in Phase 2
-- Deterministic game loop: fixed timestep, update/render separation
-- Isometric projection: screen <-> world coords conversion
-- Depth sorting: z-ordering of tiles and entities in iso
-- Sprite sheet blitting with SDL2
-- A* on a grid with obstacles
-- Shadowcasting for FOV (Bjorn Bergstrom's algorithm or similar)
+**What changes:**
+- `src/game_state.rs` (new) — `GameState` struct owns: tilemap, `Vec<Entity>`, fov_map, click_target. Methods: `apply_input(&mut self, GameInput)`, `tick(&mut self) -> Vec<GameEvent>`
+- `src/entity.rs` (new, replaces player.rs) — `Entity` struct with `id: u64`, `EntityKind` enum (Player/NPC/Enemy), grid + visual position, pathfinding state
+- `src/input.rs` (new) — `GameInput` enum: `MoveDirection { entity_id, dx, dy }`, `MoveTo { entity_id, target_x, target_y }`
+- `src/main.rs` — simplified to: SDL2 init → loop { poll events → translate to GameInput → apply → tick → render }
+- `src/renderer.rs` — takes `&GameState` instead of individual pieces
+- Add a second entity (NPC) standing on the map to prove multi-entity works
+
+**Verification:** `cargo run` works identically to before. `main.rs` is ~50 lines. A second entity is visible.
 
 ---
 
@@ -121,36 +130,5 @@ RPG/exploration with isometric view. Aesthetic similar to Fallout 1: pre-rendere
 
 **The Rust Book:** https://doc.rust-lang.org/stable/book/
 
----
-
-## JS -> Rust vocabulary (quick reference)
-
-| JavaScript/TypeScript | Rust |
-|-----------------------|------|
-| `let x = 5` (mutable by default) | `let mut x = 5` (immutable by default) |
-| `const x = 5` | `let x = 5` |
-| `undefined` / `null` | `Option<T>` (`None` / `Some(value)`) |
-| `throw new Error(...)` | `Err(...)` with `Result<T, E>` |
-| `try/catch` | `match result { Ok(v) => ..., Err(e) => ... }` or `?` |
-| `interface Foo { ... }` | `trait Foo { ... }` |
-| `class Foo implements Bar` | `struct Foo; impl Bar for Foo { ... }` |
-| `Array<T>` | `Vec<T>` |
-| `Map<K, V>` | `HashMap<K, V>` |
-| Closures `(x) => x + 1` | Closures `\|x\| x + 1` |
-| ES Modules (`import/export`) | `mod`, `use`, `pub` |
-| `typeof` / duck typing | Traits + compile-time generics |
-| Garbage collector | Ownership + borrow checker (compile time) |
-| `switch` (with fall-through) | `match` (exhaustive, no fall-through) |
-| `?.` optional chaining | `if let Some(x) = ...` or `?` operator |
-| `npm` / `package.json` | `cargo` / `Cargo.toml` |
-| `node index.js` | `cargo run` |
-| `eslint` | `cargo clippy` |
-
----
-
-## Additional notes
-
-- Always respond in Spanish.
-- If there are multiple ways to do something, show the most explicit one first and the most idiomatic one second, explaining the difference.
-- When the Rust compiler rejects something, help read the error message before giving the solution.
-- The ultimate goal is a working game where I understand every line of code, not just that it works.
+**Rust concepts not yet learned** (explain with JS/TS comparison before using):
+Lifetimes (`'a`) → P2 | Arc/Mutex → P9 | async/await → P9 | trait objects (`dyn Trait`) → TBD | `#[serde(skip)]` → P7
