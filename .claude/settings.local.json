@@ -17,7 +17,11 @@
       "Bash(cmake --help)",
       "Bash(export CMAKE_GENERATOR=\"Visual Studio 16 2019\")",
       "Bash(cargo clean:*)",
-      "Bash(ls C:/Users/Urano/Documents/repositorios/rust/*.md)"
+      "Bash(ls C:/Users/Urano/Documents/repositorios/rust/*.md)",
+      "WebSearch",
+      "Bash(/c/ffmpeg/bin/ffprobe -v error -show_entries stream=width,height -of csv=p=0 \"C:/Users/Urano/Documents/repositorios/rust/assets/tiles/Ground/ground_stone.png\")",
+      "Bash(/c/ffmpeg/bin/ffprobe -v error -show_entries stream=width,height -of csv=p=0 \"C:/Users/Urano/Documents/repositorios/rust/assets/tiles/Ground/wall_stone_left_64x32.png\")",
+      "Bash(/c/ffmpeg/bin/ffprobe -v error -show_entries stream=width,height -of csv=p=0 \"C:/Users/Urano/Documents/repositorios/rust/assets/tiles/Decor/prop_chest_wood.png\")"
     ]
   }
 }

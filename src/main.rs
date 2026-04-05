@@ -1,3 +1,4 @@
+mod assets;
 mod camera;
 mod entity;
 mod fov;
@@ -14,6 +15,7 @@ use sdl2::mouse::MouseButton;
 use sdl2::pixels::Color;
 use std::time::{Duration, Instant};
 
+use assets::AssetManager;
 use camera::Camera;
 use game_state::GameState;
 use input::GameInput;
@@ -51,6 +53,12 @@ fn main() {
         .expect("Failed to create canvas");
 
     let mut event_pump = sdl_context.event_pump().expect("Failed to get event pump");
+
+    // --- Asset Manager ---
+    // TextureCreator must live as long as the textures it creates (lifetime 'a)
+    let texture_creator = canvas.texture_creator();
+    let mut assets = AssetManager::new(&texture_creator);
+    assets.generate_placeholders().expect("Failed to generate placeholder textures");
 
     // --- Client-only state (not part of GameState) ---
     let mut camera = Camera::new();
@@ -133,7 +141,7 @@ fn main() {
         canvas.set_draw_color(Color::RGB(20, 20, 40));
         canvas.clear();
 
-        renderer::draw_world(&mut canvas, &state, &camera);
+        renderer::draw_world(&mut canvas, &state, &camera, &mut assets);
 
         canvas.present();
 
