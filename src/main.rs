@@ -1,4 +1,5 @@
 mod camera;
+mod fov;
 mod iso;
 mod pathfinding;
 mod player;
@@ -12,12 +13,13 @@ use sdl2::pixels::Color;
 use std::time::{Duration, Instant};
 
 use camera::Camera;
+use fov::FovMap;
 use iso::screen_to_grid;
 use player::Player;
 use tilemap::Tilemap;
 
-const WINDOW_WIDTH: u32 = 800;
-const WINDOW_HEIGHT: u32 = 600;
+const WINDOW_WIDTH: u32 = 1280;
+const WINDOW_HEIGHT: u32 = 900;
 const WINDOW_TITLE: &str = "Isometric Game";
 
 // Fixed timestep: 60 logic updates per second
@@ -26,6 +28,9 @@ const TICK_DURATION: Duration = Duration::from_nanos(1_000_000_000 / TICKS_PER_S
 
 // Player movement: one step every N ticks (prevents moving too fast when using WASD)
 const MOVE_COOLDOWN: u32 = 6;
+
+// FOV radius in tiles
+const FOV_RADIUS: i32 = 10;
 
 fn main() {
     // --- Load map from file ---
@@ -38,6 +43,8 @@ fn main() {
     let window = video_subsystem
         .window(WINDOW_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT)
         .position_centered()
+        .resizable()
+        .maximized()
         .build()
         .expect("Failed to create window");
 
@@ -52,6 +59,7 @@ fn main() {
     // --- Game state ---
     let mut camera = Camera::new();
     let mut player = Player::new(0, 0);
+    let mut fov_map = FovMap::new(tilemap.cols, tilemap.rows);
     let mut move_timer: u32 = 0;
     let mut click_target: Option<(i32, i32)> = None;
     let mut previous_time = Instant::now();
@@ -61,6 +69,9 @@ fn main() {
     // FPS counter
     let mut fps_timer = Instant::now();
     let mut frame_count: u32 = 0;
+
+    // Initial FOV computation
+    fov_map.compute(player.grid_x, player.grid_y, FOV_RADIUS, &tilemap);
 
     // --- Game Loop ---
     while running {
@@ -79,12 +90,11 @@ fn main() {
                     running = false;
                 }
                 Event::MouseButtonDown { mouse_btn: MouseButton::Left, x, y, .. } => {
-                    // Convert screen click to world coordinates, then to grid
-                    let world_x = x - (WINDOW_WIDTH as i32 / 2) + camera.x;
-                    let world_y = y - (WINDOW_HEIGHT as i32 / 4) + camera.y;
+                    let (ww, wh) = canvas.output_size().unwrap_or((WINDOW_WIDTH, WINDOW_HEIGHT));
+                    let world_x = x - (ww as i32 / 2) + camera.x;
+                    let world_y = y - (wh as i32 / 4) + camera.y;
                     let (grid_x, grid_y) = screen_to_grid(world_x, world_y);
 
-                    // Only pathfind to valid tiles
                     if grid_x >= 0 && grid_x < tilemap.cols && grid_y >= 0 && grid_y < tilemap.rows {
                         player.move_to(grid_x, grid_y, &tilemap);
                         click_target = Some((grid_x, grid_y));
@@ -137,6 +147,9 @@ fn main() {
             camera.x = player.visual_x as i32;
             camera.y = player.visual_y as i32;
 
+            // Recompute FOV every tick (cheap for small radius, avoids visual jumps)
+            fov_map.compute(player.grid_x, player.grid_y, FOV_RADIUS, &tilemap);
+
             lag -= TICK_DURATION;
         }
 
@@ -144,7 +157,7 @@ fn main() {
         canvas.set_draw_color(Color::RGB(20, 20, 40));
         canvas.clear();
 
-        renderer::draw_world(&mut canvas, &tilemap, &player, &camera, click_target);
+        renderer::draw_world(&mut canvas, &tilemap, &player, &camera, click_target, &fov_map);
 
         canvas.present();
 

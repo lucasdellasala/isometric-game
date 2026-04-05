@@ -4,23 +4,18 @@ use sdl2::render::Canvas;
 use sdl2::video::Window;
 
 use crate::camera::Camera;
+use crate::fov::FovMap;
 use crate::iso::{grid_to_screen, TILE_HEIGHT, TILE_WIDTH};
 use crate::player::Player;
 use crate::tilemap::Tilemap;
 
-const SCREEN_WIDTH: i32 = 800;
-const SCREEN_HEIGHT: i32 = 600;
-const SCREEN_CENTER_X: i32 = SCREEN_WIDTH / 2;
-const SCREEN_CENTER_Y: i32 = SCREEN_HEIGHT / 4;
-
 // Margin in pixels outside the screen to still draw tiles
-// (prevents popping at edges, especially for tall tiles)
 const CULL_MARGIN: i32 = 64;
 
 /// Convert grid position to screen position with camera offset applied.
-fn to_screen(grid_x: i32, grid_y: i32, cam: &Camera) -> (i32, i32) {
+fn to_screen(grid_x: i32, grid_y: i32, cam: &Camera, screen_w: i32, screen_h: i32) -> (i32, i32) {
     let (sx, sy) = grid_to_screen(grid_x, grid_y);
-    (sx - cam.x + SCREEN_CENTER_X, sy - cam.y + SCREEN_CENTER_Y)
+    (sx - cam.x + screen_w / 2, sy - cam.y + screen_h / 4)
 }
 
 /// Draw a filled diamond (the flat top face of a tile).
@@ -88,10 +83,9 @@ fn fill_right_face(canvas: &mut Canvas<Window>, cx: i32, cy: i32, height: i32, c
 }
 
 /// Draw the player as a colored diamond on the tile, raised slightly.
-fn draw_player(canvas: &mut Canvas<Window>, player: &Player, cam: &Camera) {
-    // Use visual position (smooth) instead of grid position (snappy)
-    let cx = player.visual_x as i32 - cam.x + SCREEN_CENTER_X;
-    let cy = player.visual_y as i32 - cam.y + SCREEN_CENTER_Y;
+fn draw_player(canvas: &mut Canvas<Window>, player: &Player, cam: &Camera, sw: i32, sh: i32) {
+    let cx = player.visual_x as i32 - cam.x + sw / 2;
+    let cy = player.visual_y as i32 - cam.y + sh / 4;
 
     // Player body: a smaller diamond on top of the tile, raised up
     let body_height = 20;
@@ -140,16 +134,16 @@ fn draw_player(canvas: &mut Canvas<Window>, player: &Player, cam: &Camera) {
 }
 
 /// Check if a screen position is visible (within the window + margin).
-fn is_visible(cx: i32, cy: i32) -> bool {
+fn is_on_screen(cx: i32, cy: i32, screen_w: i32, screen_h: i32) -> bool {
     cx > -CULL_MARGIN - TILE_WIDTH
-        && cx < SCREEN_WIDTH + CULL_MARGIN + TILE_WIDTH
+        && cx < screen_w + CULL_MARGIN + TILE_WIDTH
         && cy > -CULL_MARGIN - TILE_HEIGHT * 2
-        && cy < SCREEN_HEIGHT + CULL_MARGIN + TILE_HEIGHT
+        && cy < screen_h + CULL_MARGIN + TILE_HEIGHT
 }
 
 /// Draw a target marker (small yellow diamond) on a tile.
-fn draw_marker(canvas: &mut Canvas<Window>, grid_x: i32, grid_y: i32, cam: &Camera) {
-    let (cx, cy) = to_screen(grid_x, grid_y, cam);
+fn draw_marker(canvas: &mut Canvas<Window>, grid_x: i32, grid_y: i32, cam: &Camera, sw: i32, sh: i32) {
+    let (cx, cy) = to_screen(grid_x, grid_y, cam, sw, sh);
     let size = 6;
     let center_y = cy + TILE_HEIGHT / 2;
 
@@ -163,15 +157,40 @@ fn draw_marker(canvas: &mut Canvas<Window>, grid_x: i32, grid_y: i32, cam: &Came
     }
 }
 
+/// Darken a color by a factor (0.0 = black, 1.0 = unchanged).
+fn darken(color: Color, factor: f64) -> Color {
+    Color::RGB(
+        (color.r as f64 * factor) as u8,
+        (color.g as f64 * factor) as u8,
+        (color.b as f64 * factor) as u8,
+    )
+}
+
 /// Draw the entire tilemap and player with correct depth sorting (back to front).
-pub fn draw_world(canvas: &mut Canvas<Window>, tilemap: &Tilemap, player: &Player, cam: &Camera, click_target: Option<(i32, i32)>) {
+pub fn draw_world(
+    canvas: &mut Canvas<Window>,
+    tilemap: &Tilemap,
+    player: &Player,
+    cam: &Camera,
+    click_target: Option<(i32, i32)>,
+    fov: &FovMap,
+) {
+    let (sw, sh) = canvas.output_size().unwrap_or((1280, 900));
+    let sw = sw as i32;
+    let sh = sh as i32;
+
     // Draw all tiles first (back to front)
     for row in 0..tilemap.rows {
         for col in 0..tilemap.cols {
-            let (cx, cy) = to_screen(col, row, cam);
+            let (cx, cy) = to_screen(col, row, cam, sw, sh);
 
-            // Frustum culling: skip tiles outside the screen
-            if !is_visible(cx, cy) {
+            if !is_on_screen(cx, cy, sw, sh) {
+                continue;
+            }
+
+            let dim = fov.get_brightness(col, row);
+
+            if dim < 0.01 {
                 continue;
             }
 
@@ -179,20 +198,22 @@ pub fn draw_world(canvas: &mut Canvas<Window>, tilemap: &Tilemap, player: &Playe
             let height = tile.height();
 
             if height > 0 {
-                fill_left_face(canvas, cx, cy - height, height, tile.side_color());
-                fill_right_face(canvas, cx, cy - height, height, tile.side_color());
-                fill_diamond(canvas, cx, cy - height, tile.top_color());
+                fill_left_face(canvas, cx, cy - height, height, darken(tile.side_color(), dim));
+                fill_right_face(canvas, cx, cy - height, height, darken(tile.side_color(), dim));
+                fill_diamond(canvas, cx, cy - height, darken(tile.top_color(), dim));
             } else {
-                fill_diamond(canvas, cx, cy, tile.top_color());
+                fill_diamond(canvas, cx, cy, darken(tile.top_color(), dim));
             }
         }
     }
 
-    // Draw click target marker
+    // Draw click target marker (only if bright enough)
     if let Some((tx, ty)) = click_target {
-        draw_marker(canvas, tx, ty, cam);
+        if fov.get_brightness(tx, ty) > 0.5 {
+            draw_marker(canvas, tx, ty, cam, sw, sh);
+        }
     }
 
     // Draw player on top of all tiles
-    draw_player(canvas, player, cam);
+    draw_player(canvas, player, cam, sw, sh);
 }

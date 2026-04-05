@@ -99,9 +99,9 @@ RPG/exploration with isometric view. Aesthetic similar to Fallout 1: pre-rendere
 | **M3** | Sprites + correct depth sorting | Done |
 | **M4** | Tilemap from file (JSON) | Done |
 | **M5** | Player entity + movement (WASD) | Done |
-| **M6** | Camera following player + large map + frustum culling | Pending |
-| **M7** | A* pathfinding on isometric grid | Pending |
-| **M8** | FOV / Shadowcasting (fog of war, line of sight) | Pending |
+| **M6** | Camera following player + large map + frustum culling | Done |
+| **M7** | A* pathfinding on isometric grid | Done |
+| **M8** | FOV / Shadowcasting (fog of war, line of sight) | Done |
 
 ### Known improvements (backlog)
 - ~~**Smooth player movement:** Interpolate visual position between tiles instead of snapping tile-to-tile.~~ Done.
