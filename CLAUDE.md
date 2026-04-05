@@ -1,152 +1,152 @@
-# CLAUDE.md — Aprendizaje de Rust + Videojuego Isométrico
+# CLAUDE.md — Rust Learning + Isometric Game
 
-## Contexto del proyecto
+## Project context
 
-Estoy aprendiendo Rust viniendo de JavaScript/TypeScript (Node.js). Entiendo programación — tipos, funciones, estructuras de datos, async, etc. — y ya completé los fundamentos de Rust (Fase 1).
+I'm learning Rust coming from JavaScript/TypeScript (Node.js). I understand programming — types, functions, data structures, async, etc. — and I've already completed the Rust fundamentals (Phase 1).
 
-Ahora estoy en la **Fase 2 — construir un videojuego isométrico** estilo Fallout 1.
-
----
-
-## Mi perfil como desarrollador
-
-- Lenguajes dominados: JavaScript, TypeScript, Node.js
-- Conceptos que ya manejo de JS: tipos, interfaces, generics (TS), async/await, closures, módulos, estructuras de datos
-- IDE: Zed (con rust-analyzer integrado)
-- Entorno: Windows 10, Rust 1.94.1, Claude Code como asistente
-- Quiero entender cada línea que escribo — no solo que funcione
+I'm now on **Phase 2 — building an isometric game** in the style of Fallout 1.
 
 ---
 
-## Fase 1 — Completada
+## My developer profile
 
-Conceptos de Rust que ya aprendí y entiendo:
-
-| Concepto | Capítulo Rust Book | Estado |
-|----------|-------------------|--------|
-| Variables, mutabilidad, `let` vs `const` | 3 | Completado |
-| Tipos de datos (`i32`, `u8`, `f64`, `bool`, `&str`, `String`) | 3 | Completado |
-| Funciones, retorno implícito, macros vs funciones | 3 | Completado |
-| Control de flujo (`if` como expresión, `match`, `for`, `loop`, `while`) | 3 | Completado |
-| Ownership, move, Copy types | 4 | Completado |
-| Borrowing (`&`, `&mut`), reglas de borrowing | 4 | Completado |
-| Slices (`&str`, `&[T]`) | 4 | Completado |
-| Structs, métodos, `impl`, funciones asociadas | 5 | Completado |
-| Enums con datos, pattern matching exhaustivo | 6 | Completado |
-| `Option<T>` (`Some`/`None`) | 6 | Completado |
-| Colecciones: `Vec<T>`, `String`, `HashMap<K, V>` | 8 | Completado |
-| Error handling: `Result<T, E>`, `panic!`, operador `?` | 9 | Completado |
-| Traits, `impl Trait for Struct`, `derive`, trait bounds | 10 | Completado |
-| Generics `<T>` | 10 | Completado |
-| Closures (`\|x\| x + 1`), `move` | 13 | Completado |
-| Iteradores (`.iter()`, `.map()`, `.filter()`, `.collect()`, etc.) | 13 | Completado |
-| Módulos (`mod`, `use`, `pub`, carpetas con `mod.rs`, `crate::`) | 7 | Completado |
-
-### Conceptos de Rust que AÚN NO aprendí
-
-Estos conceptos aparecerán en la Fase 2. **Cuando sea necesario usar alguno, explicarlo antes de usarlo, comparando con JS/TS.**
-
-| Concepto | Cuándo va a aparecer |
-|----------|---------------------|
-| **Lifetimes (`'a`)** | Cuando una struct guarde referencias en vez de owned data |
-| **Box, Rc, Arc** (smart pointers) | Si necesitamos polimorfismo dinámico o datos compartidos |
-| **trait objects (`dyn Trait`)** | Si necesitamos distintos tipos en una misma colección |
-| **async/await** | Probablemente no en Fase 2, el game loop es sincrónico |
-| **unsafe** | Si SDL2 lo requiere en algún binding |
-| **Lifetimes en structs** | Cuando una struct necesite guardar un `&str` en vez de `String` |
-| **Error types personalizados** | Cuando crezca el manejo de errores del juego |
-| **Closures como parámetros (`Fn`, `FnMut`, `FnOnce`)** | Cuando pasemos callbacks a sistemas del juego |
+- Languages I know: JavaScript, TypeScript, Node.js
+- Concepts I already understand from JS: types, interfaces, generics (TS), async/await, closures, modules, basic data structures
+- IDE: Zed (with built-in rust-analyzer)
+- Environment: Windows 10, Rust 1.94.1, Claude Code as assistant
+- I want to understand every line I write — not just make it work
 
 ---
 
-## Reglas de interacción
+## Phase 1 — Completed
 
-### Explicaciones
-- **Siempre comparar con JS/TS** cuando introduzcas un concepto nuevo.
-- **Explicar el "por qué"** detrás de las decisiones de diseño, no solo el "cómo".
-- Si un concepto tiene un capítulo en The Rust Book, mencionarlo.
-- **Si un milestone requiere un concepto nuevo** (de la tabla de arriba), explicarlo primero con un ejemplo pequeño antes de usarlo en el juego.
+Rust concepts I've learned and understand:
 
-### Código
-- **No escribir código que no pueda explicar.** Estar preparado para explicar cada línea si pregunto.
-- **Preferir código explícito sobre código idiomático** hasta que yo conozca ambas formas. Mostrar la explícita primero, la idiomática después.
-- **Compilar siempre en la cabeza antes de sugerir.** No sugerir código que el borrow checker va a rechazar sin advertirlo.
-- Usar `cargo check` y `cargo clippy` como herramientas de feedback.
+| Concept | Rust Book Chapter | Status |
+|---------|-------------------|--------|
+| Variables, mutability, `let` vs `const` | 3 | Done |
+| Data types (`i32`, `u8`, `f64`, `bool`, `&str`, `String`) | 3 | Done |
+| Functions, implicit return, macros vs functions | 3 | Done |
+| Control flow (`if` as expression, `match`, `for`, `loop`, `while`) | 3 | Done |
+| Ownership, move, Copy types | 4 | Done |
+| Borrowing (`&`, `&mut`), borrowing rules | 4 | Done |
+| Slices (`&str`, `&[T]`) | 4 | Done |
+| Structs, methods, `impl`, associated functions | 5 | Done |
+| Enums with data, exhaustive pattern matching | 6 | Done |
+| `Option<T>` (`Some`/`None`) | 6 | Done |
+| Collections: `Vec<T>`, `String`, `HashMap<K, V>` | 8 | Done |
+| Error handling: `Result<T, E>`, `panic!`, `?` operator | 9 | Done |
+| Traits, `impl Trait for Struct`, `derive`, trait bounds | 10 | Done |
+| Generics `<T>` | 10 | Done |
+| Closures (`\|x\| x + 1`), `move` | 13 | Done |
+| Iterators (`.iter()`, `.map()`, `.filter()`, `.collect()`, etc.) | 13 | Done |
+| Modules (`mod`, `use`, `pub`, folders with `mod.rs`, `crate::`) | 7 | Done |
 
-### Ritmo
-- Avanzar un concepto a la vez.
-- Cuando algo no compile, **ayudarme a leer el error del compilador** en lugar de darme la solución directa.
-- Si el código usa un concepto que no vi, **parar y explicar antes de seguir**.
+### Rust concepts I haven't learned yet
+
+These concepts will appear during Phase 2. **When any of them becomes necessary, explain it first with a small example before using it in the game, comparing with JS/TS.**
+
+| Concept | When it will appear |
+|---------|---------------------|
+| **Lifetimes (`'a`)** | When a struct stores references instead of owned data |
+| **Box, Rc, Arc** (smart pointers) | If we need dynamic polymorphism or shared data |
+| **trait objects (`dyn Trait`)** | If we need different types in the same collection |
+| **async/await** | Probably not in Phase 2, the game loop is synchronous |
+| **unsafe** | If SDL2 requires it in some binding |
+| **Lifetimes in structs** | When a struct needs to store a `&str` instead of `String` |
+| **Custom error types** | When the game's error handling grows |
+| **Closures as parameters (`Fn`, `FnMut`, `FnOnce`)** | When we pass callbacks to game systems |
 
 ---
 
-## Fase 2 — Videojuego isométrico (EN CURSO)
+## Interaction rules
 
-### Concepto
-RPG/exploración con vista isométrica. Estética similar a Fallout 1: gráficos pre-renderizados en 2D isométrico, tile-based, con niebla de guerra y pathfinding.
+### Explanations
+- **Always compare with JS/TS** when introducing a new concept.
+- **Explain the "why"** behind design decisions, not just the "how".
+- If a concept has a chapter in The Rust Book, mention it.
+- **If a milestone requires a new concept** (from the table above), explain it first with a small example before using it in the game.
 
-### Stack técnico
-- **Lenguaje:** Rust
-- **Librería gráfica:** SDL2 (`sdl2` crate con feature `image`)
-- **Sin motor de juego.** Todo el rendering, game loop, y sistemas son código propio.
+### Code
+- **Don't write code I can't explain.** Be ready to explain every line if I ask.
+- **Prefer explicit code over idiomatic code** until I know both forms. Show the explicit one first, the idiomatic one second.
+- **Always mentally compile before suggesting.** Don't suggest code the borrow checker will reject without warning.
+- Use `cargo check` and `cargo clippy` as feedback tools.
+
+### Pace
+- One concept at a time.
+- When something doesn't compile, **help me read the compiler error** instead of giving the solution directly.
+- If the code uses a concept I haven't seen, **stop and explain before continuing**.
+
+---
+
+## Phase 2 — Isometric Game (IN PROGRESS)
+
+### Concept
+RPG/exploration with isometric view. Aesthetic similar to Fallout 1: pre-rendered 2D isometric graphics, tile-based, with fog of war and pathfinding.
+
+### Tech stack
+- **Language:** Rust
+- **Graphics library:** SDL2 (`sdl2` crate with `bundled` feature)
+- **No game engine.** All rendering, game loop, and systems are custom code.
 
 ### Milestones
 
-| Milestone | Objetivo | Estado |
-|-----------|----------|--------|
-| **M1** | Ventana + game loop con fixed timestep | Pendiente |
-| **M2** | Tile renderer isométrico (proyección iso, grid, camera scroll) | Pendiente |
-| **M3** | Sprites + depth sorting correcto | Pendiente |
-| **M4** | Tilemap desde archivo (RON o JSON) | Pendiente |
-| **M5** | Entidad player + movimiento (click-to-move o WASD) | Pendiente |
-| **M6** | Cámara que sigue al player + mapa grande | Pendiente |
-| **M7** | A* pathfinding sobre grid isométrico | Pendiente |
-| **M8** | FOV / Shadowcasting (niebla de guerra, línea de visión) | Pendiente |
+| Milestone | Goal | Status |
+|-----------|------|--------|
+| **M1** | Window + game loop with fixed timestep | Done |
+| **M2** | Isometric tile renderer (iso projection, grid, camera scroll) | Pending |
+| **M3** | Sprites + correct depth sorting | Pending |
+| **M4** | Tilemap from file (RON or JSON) | Pending |
+| **M5** | Player entity + movement (click-to-move or WASD) | Pending |
+| **M6** | Camera following player + large map | Pending |
+| **M7** | A* pathfinding on isometric grid | Pending |
+| **M8** | FOV / Shadowcasting (fog of war, line of sight) | Pending |
 
-### Conceptos técnicos a dominar en Fase 2
-- Game loop determinístico: fixed timestep, separación update/render
-- Proyección isométrica: conversión screen ↔ world coords
-- Depth sorting: z-ordering de tiles y entidades en iso
-- Sprite sheet blitting con SDL2
-- A* sobre un grid con obstáculos
-- Shadowcasting para FOV (algoritmo de Björn Bergström o similar)
+### Technical concepts to master in Phase 2
+- Deterministic game loop: fixed timestep, update/render separation
+- Isometric projection: screen <-> world coords conversion
+- Depth sorting: z-ordering of tiles and entities in iso
+- Sprite sheet blitting with SDL2
+- A* on a grid with obstacles
+- Shadowcasting for FOV (Bjorn Bergstrom's algorithm or similar)
 
 ---
 
-## Recurso de referencia
+## Reference
 
 **The Rust Book:** https://doc.rust-lang.org/stable/book/
 
 ---
 
-## Vocabulario JS → Rust (referencia rápida)
+## JS -> Rust vocabulary (quick reference)
 
 | JavaScript/TypeScript | Rust |
 |-----------------------|------|
-| `let x = 5` (mutable por defecto) | `let mut x = 5` (inmutable por defecto) |
+| `let x = 5` (mutable by default) | `let mut x = 5` (immutable by default) |
 | `const x = 5` | `let x = 5` |
 | `undefined` / `null` | `Option<T>` (`None` / `Some(value)`) |
-| `throw new Error(...)` | `Err(...)` con `Result<T, E>` |
-| `try/catch` | `match result { Ok(v) => ..., Err(e) => ... }` o `?` |
+| `throw new Error(...)` | `Err(...)` with `Result<T, E>` |
+| `try/catch` | `match result { Ok(v) => ..., Err(e) => ... }` or `?` |
 | `interface Foo { ... }` | `trait Foo { ... }` |
 | `class Foo implements Bar` | `struct Foo; impl Bar for Foo { ... }` |
 | `Array<T>` | `Vec<T>` |
 | `Map<K, V>` | `HashMap<K, V>` |
 | Closures `(x) => x + 1` | Closures `\|x\| x + 1` |
-| Módulos ES (`import/export`) | `mod`, `use`, `pub` |
-| `typeof` / duck typing | Traits + generics en tiempo de compilación |
-| Garbage collector | Ownership + borrow checker (tiempo de compilación) |
-| `switch` (con fall-through) | `match` (exhaustivo, sin fall-through) |
-| `?.` optional chaining | `if let Some(x) = ...` o `?` operator |
+| ES Modules (`import/export`) | `mod`, `use`, `pub` |
+| `typeof` / duck typing | Traits + compile-time generics |
+| Garbage collector | Ownership + borrow checker (compile time) |
+| `switch` (with fall-through) | `match` (exhaustive, no fall-through) |
+| `?.` optional chaining | `if let Some(x) = ...` or `?` operator |
 | `npm` / `package.json` | `cargo` / `Cargo.toml` |
 | `node index.js` | `cargo run` |
 | `eslint` | `cargo clippy` |
 
 ---
 
-## Notas adicionales
+## Additional notes
 
-- Responder siempre en español.
-- Si hay varias formas de hacer algo, mostrar la más explícita primero y la más idiomática después, explicando la diferencia.
-- Cuando el compilador de Rust rechace algo, ayudar a leer el mensaje de error antes de dar la solución.
-- El objetivo final es un juego funcional donde entienda cada línea del código, no solo que funcione.
+- Always respond in Spanish.
+- If there are multiple ways to do something, show the most explicit one first and the most idiomatic one second, explaining the difference.
+- When the Rust compiler rejects something, help read the error message before giving the solution.
+- The ultimate goal is a working game where I understand every line of code, not just that it works.

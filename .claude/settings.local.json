@@ -7,7 +7,17 @@
       "Bash(cargo init:*)",
       "Bash(cargo run:*)",
       "Bash(powershell -Command \"[Environment]::GetEnvironmentVariable\\('Path', 'User'\\)\")",
-      "Bash(cargo check:*)"
+      "Bash(cargo check:*)",
+      "Bash(cargo build:*)",
+      "Bash(winget install:*)",
+      "Bash(powershell -Command \"winget install Kitware.CMake --accept-package-agreements --accept-source-agreements\")",
+      "Bash(curl -L -o /c/Users/Urano/Downloads/cmake-installer.msi \"https://github.com/Kitware/CMake/releases/download/v3.31.6/cmake-3.31.6-windows-x86_64.msi\")",
+      "Bash(export PATH=\"/c/Program Files/CMake/bin:$HOME/.cargo/bin:$PATH\")",
+      "Bash(cmake --version)",
+      "Bash(cmake --help)",
+      "Bash(export CMAKE_GENERATOR=\"Visual Studio 16 2019\")",
+      "Bash(cargo clean:*)",
+      "Bash(ls C:/Users/Urano/Documents/repositorios/rust/*.md)"
     ]
   }
 }
