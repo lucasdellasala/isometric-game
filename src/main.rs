@@ -49,6 +49,10 @@ fn main() {
     let mut lag = Duration::ZERO;
     let mut running = true;
 
+    // FPS counter
+    let mut fps_timer = Instant::now();
+    let mut frame_count: u32 = 0;
+
     // --- Game Loop ---
     while running {
         let current_time = Instant::now();
@@ -96,6 +100,14 @@ fn main() {
         renderer::draw_tilemap(&mut canvas, &tilemap, &camera);
 
         canvas.present();
+
+        // Update FPS counter every second
+        frame_count += 1;
+        if fps_timer.elapsed() >= Duration::from_secs(1) {
+            canvas.window_mut().set_title(&format!("{WINDOW_TITLE} — {frame_count} FPS")).ok();
+            frame_count = 0;
+            fps_timer = Instant::now();
+        }
     }
 
     println!("Game closed");
