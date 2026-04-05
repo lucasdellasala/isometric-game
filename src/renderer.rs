@@ -8,8 +8,14 @@ use crate::iso::{grid_to_screen, TILE_HEIGHT, TILE_WIDTH};
 use crate::player::Player;
 use crate::tilemap::Tilemap;
 
-const SCREEN_CENTER_X: i32 = 400; // WINDOW_WIDTH / 2
-const SCREEN_CENTER_Y: i32 = 150; // WINDOW_HEIGHT / 4
+const SCREEN_WIDTH: i32 = 800;
+const SCREEN_HEIGHT: i32 = 600;
+const SCREEN_CENTER_X: i32 = SCREEN_WIDTH / 2;
+const SCREEN_CENTER_Y: i32 = SCREEN_HEIGHT / 4;
+
+// Margin in pixels outside the screen to still draw tiles
+// (prevents popping at edges, especially for tall tiles)
+const CULL_MARGIN: i32 = 64;
 
 /// Convert grid position to screen position with camera offset applied.
 fn to_screen(grid_x: i32, grid_y: i32, cam: &Camera) -> (i32, i32) {
@@ -83,7 +89,9 @@ fn fill_right_face(canvas: &mut Canvas<Window>, cx: i32, cy: i32, height: i32, c
 
 /// Draw the player as a colored diamond on the tile, raised slightly.
 fn draw_player(canvas: &mut Canvas<Window>, player: &Player, cam: &Camera) {
-    let (cx, cy) = to_screen(player.grid_x, player.grid_y, cam);
+    // Use visual position (smooth) instead of grid position (snappy)
+    let cx = player.visual_x as i32 - cam.x + SCREEN_CENTER_X;
+    let cy = player.visual_y as i32 - cam.y + SCREEN_CENTER_Y;
 
     // Player body: a smaller diamond on top of the tile, raised up
     let body_height = 20;
@@ -131,30 +139,39 @@ fn draw_player(canvas: &mut Canvas<Window>, player: &Player, cam: &Camera) {
     }
 }
 
+/// Check if a screen position is visible (within the window + margin).
+fn is_visible(cx: i32, cy: i32) -> bool {
+    cx > -CULL_MARGIN - TILE_WIDTH
+        && cx < SCREEN_WIDTH + CULL_MARGIN + TILE_WIDTH
+        && cy > -CULL_MARGIN - TILE_HEIGHT * 2
+        && cy < SCREEN_HEIGHT + CULL_MARGIN + TILE_HEIGHT
+}
+
 /// Draw the entire tilemap and player with correct depth sorting (back to front).
 pub fn draw_world(canvas: &mut Canvas<Window>, tilemap: &Tilemap, player: &Player, cam: &Camera) {
-    // Draw back to front: low rows first, then high rows
-    // This is the painter's algorithm for isometric rendering
+    // Draw all tiles first (back to front)
     for row in 0..tilemap.rows {
         for col in 0..tilemap.cols {
-            let tile = tilemap.get(col, row);
             let (cx, cy) = to_screen(col, row, cam);
+
+            // Frustum culling: skip tiles outside the screen
+            if !is_visible(cx, cy) {
+                continue;
+            }
+
+            let tile = tilemap.get(col, row);
             let height = tile.height();
 
             if height > 0 {
-                // Tall tile: draw side faces first, then top face raised up
                 fill_left_face(canvas, cx, cy - height, height, tile.side_color());
                 fill_right_face(canvas, cx, cy - height, height, tile.side_color());
                 fill_diamond(canvas, cx, cy - height, tile.top_color());
             } else {
-                // Flat tile: just the diamond
                 fill_diamond(canvas, cx, cy, tile.top_color());
-            }
-
-            // Draw the player when we reach their row/col (correct depth order)
-            if col == player.grid_x && row == player.grid_y {
-                draw_player(canvas, player, cam);
             }
         }
     }
+
+    // Draw player on top of all tiles
+    draw_player(canvas, player, cam);
 }

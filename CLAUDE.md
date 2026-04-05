@@ -104,7 +104,8 @@ RPG/exploration with isometric view. Aesthetic similar to Fallout 1: pre-rendere
 | **M8** | FOV / Shadowcasting (fog of war, line of sight) | Pending |
 
 ### Known improvements (backlog)
-- **Smooth player movement:** Interpolate visual position between tiles instead of snapping tile-to-tile. Currently the player jumps between grid cells which feels laggy despite stable FPS.
+- ~~**Smooth player movement:** Interpolate visual position between tiles instead of snapping tile-to-tile.~~ Done.
+- **Player depth sorting with walls:** Player currently draws on top of everything. Need proper per-row depth interleaving that accounts for the visual interpolation position, not just grid position.
 
 ### Technical concepts to master in Phase 2
 - Deterministic game loop: fixed timestep, update/render separation

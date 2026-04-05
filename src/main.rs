@@ -107,10 +107,12 @@ fn main() {
                 }
             }
 
-            // Camera follows player
-            let (target_x, target_y) = iso::grid_to_screen(player.grid_x, player.grid_y);
-            camera.x = target_x;
-            camera.y = target_y;
+            // Smooth visual interpolation
+            player.update();
+
+            // Camera follows player's visual position (smooth)
+            camera.x = player.visual_x as i32;
+            camera.y = player.visual_y as i32;
 
             lag -= TICK_DURATION;
         }
