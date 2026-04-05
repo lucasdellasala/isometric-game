@@ -1,12 +1,14 @@
 use sdl2::pixels::Color;
+use serde::Deserialize;
+use std::fs;
 
 /// What type of tile sits on this grid cell
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
 pub enum TileKind {
     Grass,
     Dirt,
     Water,
-    Wall,  // Tall object — demonstrates depth sorting
+    Wall,
 }
 
 impl TileKind {
@@ -32,9 +34,17 @@ impl TileKind {
     pub fn side_color(&self) -> Color {
         match self {
             TileKind::Wall => Color::RGB(120, 120, 120),
-            _ => Color::RGB(0, 0, 0), // Not used for flat tiles
+            _ => Color::RGB(0, 0, 0),
         }
     }
+}
+
+/// JSON structure for loading a tilemap from file
+#[derive(Deserialize)]
+struct TilemapFile {
+    cols: i32,
+    rows: i32,
+    tiles: Vec<TileKind>,
 }
 
 /// The tilemap: a 2D grid of tiles
@@ -45,41 +55,27 @@ pub struct Tilemap {
 }
 
 impl Tilemap {
-    /// Create a test map with some variety
-    pub fn new_test(cols: i32, rows: i32) -> Tilemap {
-        let size = (cols * rows) as usize;
-        let mut tiles = vec![TileKind::Grass; size];
+    /// Load a tilemap from a JSON file.
+    pub fn from_file(path: &str) -> Result<Tilemap, String> {
+        let content = fs::read_to_string(path)
+            .map_err(|e| format!("Failed to read {path}: {e}"))?;
 
-        // Dirt path (diagonal)
-        for i in 0..cols.min(rows) {
-            tiles[(i * cols + i) as usize] = TileKind::Dirt;
-            if i + 1 < cols {
-                tiles[(i * cols + i + 1) as usize] = TileKind::Dirt;
-            }
+        let data: TilemapFile = serde_json::from_str(&content)
+            .map_err(|e| format!("Failed to parse {path}: {e}"))?;
+
+        let expected = (data.cols * data.rows) as usize;
+        if data.tiles.len() != expected {
+            return Err(format!(
+                "Map says {}x{} ({expected} tiles) but found {} tiles",
+                data.cols, data.rows, data.tiles.len()
+            ));
         }
 
-        // Water pond
-        for row in 3..6 {
-            for col in 8..11 {
-                if row < rows && col < cols {
-                    tiles[(row * cols + col) as usize] = TileKind::Water;
-                }
-            }
-        }
-
-        // Wall structure (L-shape)
-        for col in 2..6 {
-            if col < cols {
-                tiles[(1 * cols + col) as usize] = TileKind::Wall;
-            }
-        }
-        for row in 1..4 {
-            if row < rows && 2 < cols {
-                tiles[(row * cols + 2) as usize] = TileKind::Wall;
-            }
-        }
-
-        Tilemap { cols, rows, tiles }
+        Ok(Tilemap {
+            cols: data.cols,
+            rows: data.rows,
+            tiles: data.tiles,
+        })
     }
 
     /// Get the tile at (col, row). Returns Grass if out of bounds.

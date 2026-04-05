@@ -19,11 +19,10 @@ const WINDOW_TITLE: &str = "Isometric Game";
 const TICKS_PER_SECOND: u32 = 60;
 const TICK_DURATION: Duration = Duration::from_nanos(1_000_000_000 / TICKS_PER_SECOND as u64);
 
-// Map size in tiles
-const MAP_COLS: i32 = 16;
-const MAP_ROWS: i32 = 16;
-
 fn main() {
+    // --- Load map from file ---
+    let tilemap = Tilemap::from_file("assets/map.json").expect("Failed to load map");
+
     // --- Initialize SDL2 ---
     let sdl_context = sdl2::init().expect("Failed to initialize SDL2");
     let video_subsystem = sdl_context.video().expect("Failed to initialize video");
@@ -44,7 +43,6 @@ fn main() {
 
     // --- Game state ---
     let mut camera = Camera::new();
-    let tilemap = Tilemap::new_test(MAP_COLS, MAP_ROWS);
     let mut previous_time = Instant::now();
     let mut lag = Duration::ZERO;
     let mut running = true;

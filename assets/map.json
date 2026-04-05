@@ -1,0 +1,22 @@
+{
+  "cols": 16,
+  "rows": 16,
+  "tiles": [
+    "Grass", "Dirt",  "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass",
+    "Grass", "Dirt",  "Wall",  "Wall",  "Wall",  "Wall",  "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass",
+    "Grass", "Grass", "Wall",  "Dirt",  "Dirt",  "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass",
+    "Grass", "Grass", "Wall",  "Dirt",  "Grass", "Grass", "Grass", "Grass", "Water", "Water", "Water", "Grass", "Grass", "Grass", "Grass", "Grass",
+    "Grass", "Grass", "Grass", "Grass", "Dirt",  "Grass", "Grass", "Grass", "Water", "Water", "Water", "Grass", "Grass", "Grass", "Grass", "Grass",
+    "Grass", "Grass", "Grass", "Grass", "Grass", "Dirt",  "Grass", "Grass", "Water", "Water", "Water", "Grass", "Grass", "Grass", "Grass", "Grass",
+    "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Dirt",  "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass",
+    "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Dirt",  "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass",
+    "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Dirt",  "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass",
+    "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Dirt",  "Grass", "Grass", "Wall",  "Wall",  "Wall",  "Grass",
+    "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Dirt",  "Grass", "Wall",  "Grass", "Wall",  "Grass",
+    "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Dirt",  "Wall",  "Grass", "Wall",  "Grass",
+    "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Wall",  "Wall",  "Wall",  "Grass",
+    "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass",
+    "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass",
+    "Dirt", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass", "Grass"
+  ]
+}
