@@ -6,6 +6,13 @@ use crate::tilemap::Tilemap;
 const MOVE_COOLDOWN: u32 = 6;
 const FOV_RADIUS: i32 = 10;
 
+/// Active dialogue state — which entity is talking and what they say.
+pub struct ActiveDialogue {
+    pub target_id: u64,
+    pub target_name: String,
+    pub text: String,
+}
+
 /// All game state lives here. Pure logic — no SDL2, no rendering, no audio.
 /// In multiplayer, the server owns this. Clients send GameInput, receive GameEvent.
 pub struct GameState {
@@ -14,6 +21,7 @@ pub struct GameState {
     pub fov_map: FovMap,
     pub click_target: Option<(i32, i32)>,
     pub local_player_id: u64,
+    pub active_dialogue: Option<ActiveDialogue>,
     next_entity_id: u64,
 }
 
@@ -27,6 +35,7 @@ impl GameState {
             fov_map,
             click_target: None,
             local_player_id: 0,
+            active_dialogue: None,
             next_entity_id: 0,
         };
 
@@ -34,8 +43,19 @@ impl GameState {
         let player_id = state.spawn_entity(EntityKind::Player, "Player", 0, 0);
         state.local_player_id = player_id;
 
-        // Test NPC to prove multi-entity works
-        state.spawn_entity(EntityKind::Npc, "Guide", 4, 3);
+        // Spawn entities defined in the map file
+        for spawn in &state.tilemap.entity_spawns.clone() {
+            let kind = match spawn.kind.as_str() {
+                "Npc" => EntityKind::Npc,
+                "Enemy" => EntityKind::Enemy,
+                "Player" => continue, // Skip — player is always spawned at (0,0) for now
+                other => {
+                    eprintln!("Unknown entity kind in map: {other}");
+                    continue;
+                }
+            };
+            state.spawn_entity(kind, &spawn.name, spawn.x, spawn.y);
+        }
 
         state
     }
@@ -98,6 +118,43 @@ impl GameState {
                         events.push(GameEvent::PathNotFound { entity_id });
                     }
                 }
+            }
+            GameInput::Interact { entity_id } => {
+                // Find the player's position
+                let player_pos = self.get_entity(entity_id)
+                    .map(|e| (e.grid_x, e.grid_y));
+
+                if let Some((px, py)) = player_pos {
+                    // Look for an adjacent NPC/Enemy (4 cardinal directions)
+                    let adjacent: Vec<(i32, i32)> = vec![
+                        (px - 1, py), (px + 1, py),
+                        (px, py - 1), (px, py + 1),
+                    ];
+
+                    let target = self.entities.iter().find(|e| {
+                        e.id != entity_id
+                            && adjacent.contains(&(e.grid_x, e.grid_y))
+                    });
+
+                    if let Some(target) = target {
+                        let target_id = target.id;
+                        let target_name = target.name.clone();
+                        events.push(GameEvent::InteractionStarted {
+                            entity_id,
+                            target_id,
+                        });
+                        self.active_dialogue = Some(ActiveDialogue {
+                            target_id,
+                            target_name: target_name.clone(),
+                            text: format!("Hola, soy {}. ¡Bienvenido, aventurero!", target_name),
+                        });
+                    } else {
+                        events.push(GameEvent::NothingToInteract);
+                    }
+                }
+            }
+            GameInput::DismissDialogue => {
+                self.active_dialogue = None;
             }
         }
 

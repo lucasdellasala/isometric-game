@@ -1,6 +1,6 @@
 use crate::iso::grid_to_screen;
 use crate::pathfinding::{self, Pos};
-use crate::tilemap::{TileKind, Tilemap};
+use crate::tilemap::Tilemap;
 
 const LERP_SPEED: f64 = 0.2;
 const PATH_STEP_TICKS: u32 = 8;
@@ -62,9 +62,8 @@ impl Entity {
             return;
         }
 
-        match tilemap.get(new_x, new_y) {
-            TileKind::Wall | TileKind::Water => return,
-            _ => {}
+        if !tilemap.get(new_x, new_y).is_walkable() {
+            return;
         }
 
         self.grid_x = new_x;

@@ -7,6 +7,7 @@ mod input;
 mod iso;
 mod pathfinding;
 mod renderer;
+mod text;
 mod tilemap;
 
 use sdl2::event::Event;
@@ -20,6 +21,7 @@ use camera::Camera;
 use game_state::GameState;
 use input::GameInput;
 use iso::screen_to_grid;
+use text::TextRenderer;
 use tilemap::Tilemap;
 
 const WINDOW_WIDTH: u32 = 1280;
@@ -60,6 +62,10 @@ fn main() {
     let mut assets = AssetManager::new(&texture_creator);
     assets.generate_placeholders().expect("Failed to generate placeholder textures");
 
+    // --- Text Renderer ---
+    let mut text_renderer = TextRenderer::new(&texture_creator, "assets/fonts/default.ttf")
+        .expect("Failed to load font");
+
     // --- Client-only state (not part of GameState) ---
     let mut camera = Camera::new();
     let mut previous_time = Instant::now();
@@ -82,29 +88,44 @@ fn main() {
             match event {
                 Event::Quit { .. } => running = false,
                 Event::KeyDown { scancode: Some(Scancode::Escape), .. } => running = false,
-                Event::MouseButtonDown { mouse_btn: MouseButton::Left, x, y, .. } => {
-                    let (ww, wh) = canvas.output_size().unwrap_or((WINDOW_WIDTH, WINDOW_HEIGHT));
-                    let world_x = x - (ww as i32 / 2) + camera.x;
-                    let world_y = y - (wh as i32 / 4) + camera.y;
-                    let (grid_x, grid_y) = screen_to_grid(world_x, world_y);
-
-                    if grid_x >= 0 && grid_x < state.tilemap.cols
-                        && grid_y >= 0 && grid_y < state.tilemap.rows
-                    {
-                        state.apply_input(GameInput::MoveTo {
+                Event::KeyDown { scancode: Some(Scancode::E), .. } => {
+                    if state.active_dialogue.is_some() {
+                        // Dismiss dialogue
+                        state.apply_input(GameInput::DismissDialogue);
+                    } else {
+                        // Try to interact with adjacent entity
+                        state.apply_input(GameInput::Interact {
                             entity_id: player_id,
-                            target_x: grid_x,
-                            target_y: grid_y,
                         });
+                    }
+                }
+                Event::MouseButtonDown { mouse_btn: MouseButton::Left, x, y, .. } => {
+                    if state.active_dialogue.is_none() {
+                        let (ww, wh) = canvas.output_size().unwrap_or((WINDOW_WIDTH, WINDOW_HEIGHT));
+                        let world_x = x - (ww as i32 / 2) + camera.x;
+                        let world_y = y - (wh as i32 / 4) + camera.y;
+                        let (grid_x, grid_y) = screen_to_grid(world_x, world_y);
+
+                        if grid_x >= 0 && grid_x < state.tilemap.cols
+                            && grid_y >= 0 && grid_y < state.tilemap.rows
+                        {
+                            state.apply_input(GameInput::MoveTo {
+                                entity_id: player_id,
+                                target_x: grid_x,
+                                target_y: grid_y,
+                            });
+                        }
                     }
                 }
                 _ => {}
             }
         }
 
-        // WASD input (held keys)
+        // WASD input (held keys) — blocked during dialogue
         let keyboard = event_pump.keyboard_state();
-        let (dx, dy) = if keyboard.is_scancode_pressed(Scancode::W) || keyboard.is_scancode_pressed(Scancode::Up) {
+        let (dx, dy) = if state.active_dialogue.is_some() {
+            (0, 0)
+        } else if keyboard.is_scancode_pressed(Scancode::W) || keyboard.is_scancode_pressed(Scancode::Up) {
             (0, -1)
         } else if keyboard.is_scancode_pressed(Scancode::S) || keyboard.is_scancode_pressed(Scancode::Down) {
             (0, 1)
@@ -141,7 +162,7 @@ fn main() {
         canvas.set_draw_color(Color::RGB(20, 20, 40));
         canvas.clear();
 
-        renderer::draw_world(&mut canvas, &state, &camera, &mut assets);
+        renderer::draw_world(&mut canvas, &state, &camera, &mut assets, &mut text_renderer);
 
         canvas.present();
 

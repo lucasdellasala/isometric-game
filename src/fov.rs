@@ -148,7 +148,9 @@ impl FovMap {
                     self.set_visible(map_x, map_y, ox, oy);
                 }
 
-                let is_wall = tilemap.get(map_x, map_y).height() > 0;
+                // TODO: update to check wall objects on tile edges instead of tile type
+                // Currently no TileKind blocks vision — only wall objects will (once connected)
+                let is_wall = false;
 
                 if blocked {
                     if is_wall {

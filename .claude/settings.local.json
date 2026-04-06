@@ -21,7 +21,8 @@
       "WebSearch",
       "Bash(/c/ffmpeg/bin/ffprobe -v error -show_entries stream=width,height -of csv=p=0 \"C:/Users/Urano/Documents/repositorios/rust/assets/tiles/Ground/ground_stone.png\")",
       "Bash(/c/ffmpeg/bin/ffprobe -v error -show_entries stream=width,height -of csv=p=0 \"C:/Users/Urano/Documents/repositorios/rust/assets/tiles/Ground/wall_stone_left_64x32.png\")",
-      "Bash(/c/ffmpeg/bin/ffprobe -v error -show_entries stream=width,height -of csv=p=0 \"C:/Users/Urano/Documents/repositorios/rust/assets/tiles/Decor/prop_chest_wood.png\")"
+      "Bash(/c/ffmpeg/bin/ffprobe -v error -show_entries stream=width,height -of csv=p=0 \"C:/Users/Urano/Documents/repositorios/rust/assets/tiles/Decor/prop_chest_wood.png\")",
+      "Bash(ffmpeg -i \"C:/Users/Urano/Videos/Captures/isometric-game-02.mp4\" -vf \"fps=15,scale=640:-1:flags=lanczos\" -y \"C:/Users/Urano/Documents/repositorios/rust/isometric-game-02.gif\")"
     ]
   }
 }

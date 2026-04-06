@@ -1,4 +1,3 @@
-use sdl2::pixels::Color;
 use serde::Deserialize;
 use std::fs;
 
@@ -7,34 +6,50 @@ use std::fs;
 pub enum TileKind {
     Grass,
     Dirt,
+    Stone,
     Water,
-    Wall,
+}
+
+/// Which edge of a tile a wall sits on.
+/// Only south and east — north/west are the south/east of the adjacent tile.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WallEdge {
+    South,
+    East,
+}
+
+/// A wall object that sits on the edge of a floor tile.
+/// Example: { "x": 8, "y": 2, "edge": "south", "variant": "stone" }
+#[derive(Debug, Clone, Deserialize)]
+pub struct WallObject {
+    pub x: i32,
+    pub y: i32,
+    pub edge: WallEdge,
+    #[serde(default = "default_wall_variant")]
+    pub variant: String,
+}
+
+fn default_wall_variant() -> String {
+    String::from("stone")
+}
+
+/// An entity spawn point defined in the map JSON.
+/// Example: { "kind": "Npc", "name": "Guide", "x": 4, "y": 3 }
+#[derive(Debug, Clone, Deserialize)]
+pub struct EntitySpawn {
+    pub kind: String,
+    pub name: String,
+    pub x: i32,
+    pub y: i32,
 }
 
 impl TileKind {
-    /// Top face color of the tile
-    pub fn top_color(&self) -> Color {
+    /// Whether this tile blocks movement
+    pub fn is_walkable(&self) -> bool {
         match self {
-            TileKind::Grass => Color::RGB(80, 150, 80),
-            TileKind::Dirt => Color::RGB(150, 120, 70),
-            TileKind::Water => Color::RGB(60, 100, 180),
-            TileKind::Wall => Color::RGB(160, 160, 160),
-        }
-    }
-
-    /// Whether this tile has height (draws a vertical face)
-    pub fn height(&self) -> i32 {
-        match self {
-            TileKind::Wall => 24,
-            _ => 0,
-        }
-    }
-
-    /// Side face color (darker shade for the 3D effect)
-    pub fn side_color(&self) -> Color {
-        match self {
-            TileKind::Wall => Color::RGB(120, 120, 120),
-            _ => Color::RGB(0, 0, 0),
+            TileKind::Water => false,
+            _ => true,
         }
     }
 }
@@ -45,13 +60,21 @@ struct TilemapFile {
     cols: i32,
     rows: i32,
     tiles: Vec<TileKind>,
+    #[serde(default)]
+    walls: Vec<WallObject>,
+    #[serde(default)]
+    entities: Vec<EntitySpawn>,
 }
 
-/// The tilemap: a 2D grid of tiles
+/// The tilemap: a 2D grid of tiles, plus wall objects on tile edges.
 pub struct Tilemap {
     pub cols: i32,
     pub rows: i32,
     tiles: Vec<TileKind>,
+    /// Wall objects that sit on tile edges (blocking movement across that edge).
+    pub walls: Vec<WallObject>,
+    /// Entity spawn points loaded from the map file.
+    pub entity_spawns: Vec<EntitySpawn>,
 }
 
 impl Tilemap {
@@ -75,6 +98,8 @@ impl Tilemap {
             cols: data.cols,
             rows: data.rows,
             tiles: data.tiles,
+            walls: data.walls,
+            entity_spawns: data.entities,
         })
     }
 

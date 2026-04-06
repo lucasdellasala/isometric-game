@@ -2,7 +2,7 @@ use std::collections::BinaryHeap;
 use std::collections::HashMap;
 use std::cmp::Ordering;
 
-use crate::tilemap::{TileKind, Tilemap};
+use crate::tilemap::Tilemap;
 
 /// A position on the grid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -51,10 +51,8 @@ pub fn find_path(start: Pos, goal: Pos, tilemap: &Tilemap) -> Option<Vec<Pos>> {
     }
 
     // If goal is not walkable, no path exists
-    let goal_tile = tilemap.get(goal.x, goal.y);
-    match goal_tile {
-        TileKind::Wall | TileKind::Water => return None,
-        _ => {}
+    if !tilemap.get(goal.x, goal.y).is_walkable() {
+        return None;
     }
 
     let mut open_set = BinaryHeap::new();
@@ -102,10 +100,8 @@ pub fn find_path(start: Pos, goal: Pos, tilemap: &Tilemap) -> Option<Vec<Pos>> {
             }
 
             // Check if walkable
-            let tile = tilemap.get(neighbor.x, neighbor.y);
-            match tile {
-                TileKind::Wall | TileKind::Water => continue,
-                _ => {}
+            if !tilemap.get(neighbor.x, neighbor.y).is_walkable() {
+                continue;
             }
 
             let new_g = current_g + 1; // Each step costs 1

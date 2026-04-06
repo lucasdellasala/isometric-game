@@ -60,7 +60,7 @@ impl<'a> AssetManager<'a> {
 
     /// Load real assets where available, generate placeholders for the rest.
     pub fn generate_placeholders(&mut self) -> Result<(), String> {
-        // Load real tile assets (fall back to generated if file not found)
+        // --- Ground tiles (Woulette tileset, Ground/) ---
         if self.load_image("tile_grass", "assets/tiles/Ground/ground_stone.png").is_err() {
             self.create_tile_texture("tile_grass", Color::RGB(80, 150, 80), Color::RGB(60, 120, 60))?;
         }
@@ -69,12 +69,69 @@ impl<'a> AssetManager<'a> {
         }
         self.create_tile_texture("tile_water", Color::RGB(60, 100, 180), Color::RGB(40, 75, 150))?;
 
-        // Wall: load 64x64 image (top face + left side in one sprite)
-        if self.load_image("tile_wall", "assets/tiles/Ground/wall_stone_left_64x32.png").is_err() {
-            self.create_tile_texture("tile_wall_top", Color::RGB(160, 160, 160), Color::RGB(140, 140, 140))?;
+        // Wall sprites (directional faces)
+        let _ = self.load_image("tile_wall_left", "assets/tiles/Ground/wall_stone_left_64x32.png");
+        let _ = self.load_image("tile_wall_right", "assets/tiles/Ground/wall_stone_right_64x32.png");
+        self.create_tile_texture("tile_wall_top", Color::RGB(160, 160, 160), Color::RGB(140, 140, 140))?;
+
+        // --- AssetsV1 tiles ---
+        let v1 = "assets/tiles/AssetsV1";
+
+        // Ground: dirt variants
+        for i in 1..=13 {
+            let _ = self.load_image(&format!("ground_dirt_{i:02}"), &format!("{v1}/dirt{i:02}.png"));
+        }
+        // Ground: grass variants
+        for i in 1..=5 {
+            let _ = self.load_image(&format!("ground_grass_{i:02}"), &format!("{v1}/grass{i:02}.png"));
+        }
+        let _ = self.load_image("ground_grass_flower", &format!("{v1}/grassFlower.png"));
+        let _ = self.load_image("ground_grass_flower_large", &format!("{v1}/grassFlowerLarge.png"));
+        // Ground: stone variants
+        for i in 1..=3 {
+            let _ = self.load_image(&format!("ground_stone_{i:02}"), &format!("{v1}/stoneTile{i:02}.png"));
+        }
+        // Ground: water
+        let _ = self.load_image("ground_water", &format!("{v1}/waterTile.png"));
+
+        // Props: trees
+        let _ = self.load_image("tree_birch", &format!("{v1}/treeBirch.png"));
+        let _ = self.load_image("tree_maple", &format!("{v1}/treeMaple.png"));
+        let _ = self.load_image("tree_oak", &format!("{v1}/treeOak.png"));
+        let _ = self.load_image("tree_pine", &format!("{v1}/treePine.png"));
+        let _ = self.load_image("tree_walnut", &format!("{v1}/treeWalnut.png"));
+
+        // Props: rocks
+        let _ = self.load_image("rock_large", &format!("{v1}/rockLarge.png"));
+        let _ = self.load_image("rock_medium", &format!("{v1}/rockMedium.png"));
+        let _ = self.load_image("rock_small", &format!("{v1}/rockSmall.png"));
+
+        // Props: bushes & flowers
+        let _ = self.load_image("bush_medium", &format!("{v1}/bushMedium.png"));
+        let _ = self.load_image("bush_small", &format!("{v1}/bushSmall.png"));
+        let _ = self.load_image("flower_blue", &format!("{v1}/flowerBlue.png"));
+        let _ = self.load_image("flower_blue_cluster", &format!("{v1}/flowerBlueCluster.png"));
+
+        // Props: containers & misc
+        let _ = self.load_image("barrel", &format!("{v1}/barrel.png"));
+        let _ = self.load_image("bucket", &format!("{v1}/bucket.png"));
+        let _ = self.load_image("hay_bale", &format!("{v1}/hayBale.png"));
+        let _ = self.load_image("hay_bales_stack", &format!("{v1}/hayBalesStack.png"));
+        let _ = self.load_image("log_hollow", &format!("{v1}/logHollow.png"));
+
+        // Props: fences
+        for i in 1..=11 {
+            let _ = self.load_image(&format!("fence_{i:02}"), &format!("{v1}/fence{i:02}.png"));
         }
 
-        // Entity placeholders
+        // Props: cliffs
+        let _ = self.load_image("cliff_end", &format!("{v1}/cliffEnd.png"));
+        let _ = self.load_image("cliff_front", &format!("{v1}/cliffFront.png"));
+        let _ = self.load_image("cliff_front_2", &format!("{v1}/cliffFront2.png"));
+        let _ = self.load_image("cliff_left", &format!("{v1}/cliffLeft.png"));
+        let _ = self.load_image("cliff_left_2", &format!("{v1}/cliffLeft2.png"));
+
+        // --- Entity placeholders ---
         self.create_entity_texture("entity_player", Color::RGB(200, 60, 60))?;
         self.create_entity_texture("entity_npc", Color::RGB(60, 60, 200))?;
         self.create_entity_texture("entity_enemy", Color::RGB(200, 60, 200))?;

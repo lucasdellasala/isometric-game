@@ -4,18 +4,22 @@ use sdl2::render::Canvas;
 use sdl2::video::Window;
 
 use crate::assets::AssetManager;
-use crate::camera::Camera;
+use crate::camera::{Camera, CAMERA_ZOOM};
 use crate::entity::{Entity, EntityKind};
 use crate::game_state::GameState;
 use crate::iso::{grid_to_screen, TILE_HEIGHT, TILE_WIDTH};
+use crate::text::TextRenderer;
+#[allow(unused_imports)]
 use crate::tilemap::TileKind;
 
 const CULL_MARGIN: i32 = 64;
 
-/// Convert grid position to screen position with camera offset applied.
+/// Convert grid position to screen position with camera offset and zoom applied.
 fn to_screen(grid_x: i32, grid_y: i32, cam: &Camera, screen_w: i32, screen_h: i32) -> (i32, i32) {
     let (sx, sy) = grid_to_screen(grid_x, grid_y);
-    (sx - cam.x + screen_w / 2, sy - cam.y + screen_h / 4)
+    let x = ((sx - cam.x) as f64 * CAMERA_ZOOM) as i32 + screen_w / 2;
+    let y = ((sy - cam.y) as f64 * CAMERA_ZOOM) as i32 + screen_h / 4;
+    (x, y)
 }
 
 /// Check if a screen position is visible (within the window + margin).
@@ -29,8 +33,8 @@ fn is_on_screen(cx: i32, cy: i32, screen_w: i32, screen_h: i32) -> bool {
 /// Draw a target marker (small yellow diamond) on a tile.
 fn draw_marker(canvas: &mut Canvas<Window>, grid_x: i32, grid_y: i32, cam: &Camera, sw: i32, sh: i32) {
     let (cx, cy) = to_screen(grid_x, grid_y, cam, sw, sh);
-    let size = 6;
-    let center_y = cy + TILE_HEIGHT / 2;
+    let size = (6.0 * CAMERA_ZOOM) as i32;
+    let center_y = cy + (TILE_HEIGHT as f64 * CAMERA_ZOOM) as i32 / 2;
 
     canvas.set_draw_color(Color::RGB(255, 255, 0));
     for y in 0..size {
@@ -47,8 +51,8 @@ fn tile_texture_key(kind: TileKind) -> &'static str {
     match kind {
         TileKind::Grass => "tile_grass",
         TileKind::Dirt => "tile_dirt",
+        TileKind::Stone => "tile_grass",
         TileKind::Water => "tile_water",
-        TileKind::Wall => "tile_wall_top",
     }
 }
 
@@ -61,7 +65,7 @@ fn entity_texture_key(kind: EntityKind) -> &'static str {
     }
 }
 
-/// Draw a tile texture at a screen position, darkened by FOV brightness.
+/// Draw a tile texture at a screen position, darkened by FOV brightness, scaled by zoom.
 fn draw_tile(
     canvas: &mut Canvas<Window>,
     assets: &mut AssetManager,
@@ -69,14 +73,17 @@ fn draw_tile(
     cx: i32,
     cy: i32,
     brightness: f64,
+    zoom: f64,
 ) {
     if let Some(texture) = assets.get_mut(key) {
         let query = texture.query();
+        let w = (query.width as f64 * zoom) as u32;
+        let h = (query.height as f64 * zoom) as u32;
         let dst = Rect::new(
-            cx - query.width as i32 / 2,
+            cx - w as i32 / 2,
             cy,
-            query.width,
-            query.height,
+            w,
+            h,
         );
 
         // Darken texture using color mod (only affects non-transparent pixels)
@@ -86,105 +93,61 @@ fn draw_tile(
     }
 }
 
-/// Darken a color by brightness factor.
-fn darken(color: Color, brightness: f64) -> Color {
-    Color::RGB(
-        (color.r as f64 * brightness) as u8,
-        (color.g as f64 * brightness) as u8,
-        (color.b as f64 * brightness) as u8,
-    )
-}
-
-/// Draw the left side face of a wall using lines (parallelogram shape).
-fn fill_left_face(canvas: &mut Canvas<Window>, cx: i32, cy: i32, height: i32, color: Color) {
-    let half_w = TILE_WIDTH / 2;
-    let half_h = TILE_HEIGHT / 2;
-
-    canvas.set_draw_color(color);
-    for h in 0..height {
-        let _ = canvas.draw_line(
-            Point::new(cx - half_w, cy + half_h + h),
-            Point::new(cx, cy + TILE_HEIGHT + h),
-        );
-    }
-}
-
-/// Draw the right side face of a wall using lines (parallelogram shape).
-fn fill_right_face(canvas: &mut Canvas<Window>, cx: i32, cy: i32, height: i32, color: Color) {
-    let half_w = TILE_WIDTH / 2;
-    let half_h = TILE_HEIGHT / 2;
-
-    canvas.set_draw_color(color);
-    for h in 0..height {
-        let _ = canvas.draw_line(
-            Point::new(cx, cy + TILE_HEIGHT + h),
-            Point::new(cx + half_w, cy + half_h + h),
-        );
-    }
-}
-
-/// Draw a wall tile. If a full wall sprite exists (64x64), draws it as one image.
-/// Otherwise falls back to line-drawn side faces + textured top.
-fn draw_wall(
-    canvas: &mut Canvas<Window>,
-    assets: &mut AssetManager,
-    cx: i32,
-    cy: i32,
-    wall_height: i32,
-    brightness: f64,
-) {
-    // Try full wall sprite (includes top + side face in one image)
-    if assets.get_mut("tile_wall").is_some() {
-        // Wall sprite is taller than a flat tile — draw it offset upward
-        if let Some(texture) = assets.get_mut("tile_wall") {
-            let query = texture.query();
-            let b = (brightness * 255.0) as u8;
-            texture.set_color_mod(b, b, b);
-            let dst = Rect::new(
-                cx - query.width as i32 / 2,
-                cy - (query.height as i32 - TILE_HEIGHT),
-                query.width,
-                query.height,
-            );
-            let _ = canvas.copy(texture, None, dst);
-        }
-    } else {
-        // Fallback: line-drawn side faces + placeholder top
-        fill_left_face(canvas, cx, cy - wall_height, wall_height, darken(Color::RGB(120, 120, 120), brightness));
-        fill_right_face(canvas, cx, cy - wall_height, wall_height, darken(Color::RGB(90, 90, 90), brightness));
-        draw_tile(canvas, assets, "tile_wall_top", cx, cy - wall_height, brightness);
-    }
-}
-
 /// Draw an entity sprite at its visual position.
 fn draw_entity(
     canvas: &mut Canvas<Window>,
     assets: &mut AssetManager,
     entity: &Entity,
+    fov_map: &crate::fov::FovMap,
     cam: &Camera,
     sw: i32,
     sh: i32,
 ) {
-    let cx = entity.visual_x as i32 - cam.x + sw / 2;
-    let cy = entity.visual_y as i32 - cam.y + sh / 4;
+    // Don't draw entities in unexplored or dark areas
+    let brightness = fov_map.get_brightness(entity.grid_x, entity.grid_y);
+    if brightness < 0.5 {
+        return;
+    }
+
+    let cx = ((entity.visual_x as i32 - cam.x) as f64 * CAMERA_ZOOM) as i32 + sw / 2;
+    let cy = ((entity.visual_y as i32 - cam.y) as f64 * CAMERA_ZOOM) as i32 + sh / 4;
 
     let key = entity_texture_key(entity.kind);
 
     if let Some(texture) = assets.get_mut(key) {
         let query = texture.query();
+        let w = (query.width as f64 * CAMERA_ZOOM) as u32;
+        let h = (query.height as f64 * CAMERA_ZOOM) as u32;
+        let th = (TILE_HEIGHT as f64 * CAMERA_ZOOM) as i32;
         // Center the sprite on the tile, raise it above the ground
         let dst = Rect::new(
-            cx - query.width as i32 / 2,
-            cy + TILE_HEIGHT / 2 - query.height as i32,
-            query.width,
-            query.height,
+            cx - w as i32 / 2,
+            cy + th / 2 - h as i32,
+            w,
+            h,
         );
         let _ = canvas.copy(texture, None, dst);
     }
 }
 
+/// Compute the isometric depth row for an entity.
+/// Uses the max of grid depth and visual depth (ceiling) to avoid flickering:
+/// - Moving down-right: grid depth is higher → entity drawn after destination tiles
+/// - Moving up-left: visual depth (ceil) stays high → entity stays at old row until arrival
+/// Ceiling division ensures the entity isn't drawn before tiles it visually overlaps.
+fn entity_depth_row(entity: &Entity) -> i32 {
+    let grid_depth = entity.grid_x + entity.grid_y;
+    let half_tile = TILE_HEIGHT / 2;
+    // Ceiling division: (visual_y + half_tile - 1) / half_tile
+    let visual_depth = (entity.visual_y as i32 + half_tile - 1) / half_tile;
+    grid_depth.max(visual_depth)
+}
+
 /// Draw the entire game world. Reads GameState immutably.
-pub fn draw_world(canvas: &mut Canvas<Window>, state: &GameState, cam: &Camera, assets: &mut AssetManager) {
+/// Uses row-by-row interleaving: for each isometric row, draw tiles first,
+/// then entities whose visual depth falls in that row. This makes entities
+/// correctly appear behind walls and other tall tiles.
+pub fn draw_world(canvas: &mut Canvas<Window>, state: &GameState, cam: &Camera, assets: &mut AssetManager, text: &mut TextRenderer) {
     let (sw, sh) = canvas.output_size().unwrap_or((1280, 900));
     let sw = sw as i32;
     let sh = sh as i32;
@@ -192,9 +155,31 @@ pub fn draw_world(canvas: &mut Canvas<Window>, state: &GameState, cam: &Camera, 
     // Enable alpha blending for FOV overlay
     canvas.set_blend_mode(sdl2::render::BlendMode::Blend);
 
-    // Draw all tiles (back to front)
-    for row in 0..state.tilemap.rows {
-        for col in 0..state.tilemap.cols {
+    // Pre-compute depth row for each entity so we can draw them at the right time.
+    // depth_row = col + row in isometric space (the "diagonal" that determines draw order).
+    let mut entity_draw_order: Vec<(i32, usize)> = state.entities
+        .iter()
+        .enumerate()
+        .map(|(idx, e)| (entity_depth_row(e), idx))
+        .collect();
+    // Sort by depth row so we can iterate through them efficiently
+    entity_draw_order.sort_by_key(|(depth, _)| *depth);
+
+    let mut entity_cursor = 0;
+
+    // In isometric view, the draw order goes by "depth rows" where depth = col + row.
+    // For a map of size (cols, rows), depth ranges from 0 to (cols-1 + rows-1).
+    let max_depth = state.tilemap.cols + state.tilemap.rows - 2;
+
+    for depth in 0..=max_depth {
+        // Draw all tiles in this depth row (where col + row == depth).
+        // col ranges from max(0, depth - rows + 1) to min(depth, cols - 1).
+        let col_min = (depth - state.tilemap.rows + 1).max(0);
+        let col_max = depth.min(state.tilemap.cols - 1);
+
+        for col in col_min..=col_max {
+            let row = depth - col;
+
             let (cx, cy) = to_screen(col, row, cam, sw, sh);
 
             if !is_on_screen(cx, cy, sw, sh) {
@@ -208,26 +193,89 @@ pub fn draw_world(canvas: &mut Canvas<Window>, state: &GameState, cam: &Camera, 
             }
 
             let tile = state.tilemap.get(col, row);
-            let height = tile.height();
+            let key = tile_texture_key(tile);
+            draw_tile(canvas, assets, key, cx, cy, dim, CAMERA_ZOOM);
+        }
 
-            if height > 0 {
-                draw_wall(canvas, assets, cx, cy, height, dim);
-            } else {
-                let key = tile_texture_key(tile);
-                draw_tile(canvas, assets, key, cx, cy, dim);
+        // Draw entities whose depth row matches this depth
+        while entity_cursor < entity_draw_order.len() {
+            let (entity_depth, entity_idx) = entity_draw_order[entity_cursor];
+            if entity_depth > depth {
+                break;
             }
+            draw_entity(canvas, assets, &state.entities[entity_idx], &state.fov_map, cam, sw, sh);
+            entity_cursor += 1;
         }
     }
 
-    // Draw click target marker
+    // Draw any remaining entities (shouldn't happen, but safety net)
+    while entity_cursor < entity_draw_order.len() {
+        let (_, entity_idx) = entity_draw_order[entity_cursor];
+        draw_entity(canvas, assets, &state.entities[entity_idx], &state.fov_map, cam, sw, sh);
+        entity_cursor += 1;
+    }
+
+    // Draw click target marker (on top of everything)
     if let Some((tx, ty)) = state.click_target {
         if state.fov_map.get_brightness(tx, ty) > 0.5 {
             draw_marker(canvas, tx, ty, cam, sw, sh);
         }
     }
 
-    // Draw all entities on top
-    for entity in &state.entities {
-        draw_entity(canvas, assets, entity, cam, sw, sh);
+    // Draw dialogue box if active
+    if let Some(dialogue) = &state.active_dialogue {
+        draw_dialogue_box(canvas, text, &dialogue.target_name, &dialogue.text, sw, sh);
+    }
+}
+
+/// Draw a dialogue box at the bottom of the screen.
+/// Shows the speaker name and their text in a semi-transparent box.
+fn draw_dialogue_box(
+    canvas: &mut Canvas<Window>,
+    text: &mut TextRenderer,
+    speaker: &str,
+    dialogue_text: &str,
+    sw: i32,
+    sh: i32,
+) {
+    let box_height = 120;
+    let margin = 20;
+    let padding = 16;
+
+    // Semi-transparent dark background
+    canvas.set_draw_color(Color::RGBA(10, 10, 30, 200));
+    let box_rect = Rect::new(margin, sh - box_height - margin, (sw - margin * 2) as u32, box_height as u32);
+    let _ = canvas.fill_rect(box_rect);
+
+    // Border
+    canvas.set_draw_color(Color::RGB(180, 160, 100));
+    let _ = canvas.draw_rect(box_rect);
+
+    // Speaker name (yellow, larger font)
+    let name_x = margin + padding;
+    let name_y = sh - box_height - margin + padding;
+    if let Some(name_tex) = text.render(speaker, 22, Color::RGB(255, 220, 100)) {
+        let q = name_tex.query();
+        let dst = Rect::new(name_x, name_y, q.width, q.height);
+        let _ = canvas.copy(name_tex, None, dst);
+    }
+
+    // Dialogue text (white, smaller font)
+    let text_x = margin + padding;
+    let text_y = name_y + 30;
+    if let Some(text_tex) = text.render(dialogue_text, 18, Color::RGB(230, 230, 230)) {
+        let q = text_tex.query();
+        let dst = Rect::new(text_x, text_y, q.width, q.height);
+        let _ = canvas.copy(text_tex, None, dst);
+    }
+
+    // Hint text
+    let hint = "[E] Cerrar";
+    let hint_x = margin + padding;
+    let hint_y = sh - margin - padding - 16;
+    if let Some(hint_tex) = text.render(hint, 14, Color::RGB(150, 150, 150)) {
+        let q = hint_tex.query();
+        let dst = Rect::new(hint_x, hint_y, q.width, q.height);
+        let _ = canvas.copy(hint_tex, None, dst);
     }
 }
