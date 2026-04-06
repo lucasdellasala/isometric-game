@@ -1,7 +1,7 @@
-use crate::entity::{Entity, EntityKind};
-use crate::fov::FovMap;
-use crate::input::{GameEvent, GameInput};
-use crate::tilemap::Tilemap;
+use crate::core::entity::{Entity, EntityKind};
+use crate::core::fov::FovMap;
+use crate::core::input::{GameEvent, GameInput};
+use crate::core::tilemap::Tilemap;
 
 const MOVE_COOLDOWN: u32 = 6;
 const FOV_RADIUS: i32 = 10;

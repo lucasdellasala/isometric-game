@@ -4,7 +4,7 @@ use sdl2::video::WindowContext;
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::iso::{TILE_HEIGHT, TILE_WIDTH};
+use crate::render::iso::{TILE_HEIGHT, TILE_WIDTH};
 
 /// Manages textures for tiles, entities, and UI.
 /// The lifetime 'a is tied to the TextureCreator — textures can't outlive it.

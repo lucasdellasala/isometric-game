@@ -3,14 +3,15 @@ use sdl2::rect::{Point, Rect};
 use sdl2::render::Canvas;
 use sdl2::video::Window;
 
-use crate::assets::AssetManager;
-use crate::camera::{Camera, CAMERA_ZOOM};
-use crate::entity::{Entity, EntityKind};
-use crate::game_state::GameState;
-use crate::iso::{grid_to_screen, TILE_HEIGHT, TILE_WIDTH};
-use crate::text::TextRenderer;
+use crate::render::assets::AssetManager;
+use crate::render::camera::{Camera, CAMERA_ZOOM};
+use crate::render::post_process::{self, ApplyScope, DitherParams, MoebiusParams, PostProcessMode};
+use crate::core::entity::{Entity, EntityKind};
+use crate::core::game_state::GameState;
+use crate::render::iso::{grid_to_screen, TILE_HEIGHT, TILE_WIDTH};
+use crate::render::text::TextRenderer;
 #[allow(unused_imports)]
-use crate::tilemap::TileKind;
+use crate::core::tilemap::TileKind;
 
 const CULL_MARGIN: i32 = 64;
 
@@ -98,7 +99,7 @@ fn draw_entity(
     canvas: &mut Canvas<Window>,
     assets: &mut AssetManager,
     entity: &Entity,
-    fov_map: &crate::fov::FovMap,
+    fov_map: &crate::core::fov::FovMap,
     cam: &Camera,
     sw: i32,
     sh: i32,
@@ -143,43 +144,23 @@ fn entity_depth_row(entity: &Entity) -> i32 {
     grid_depth.max(visual_depth)
 }
 
-/// Draw the entire game world. Reads GameState immutably.
-/// Uses row-by-row interleaving: for each isometric row, draw tiles first,
-/// then entities whose visual depth falls in that row. This makes entities
-/// correctly appear behind walls and other tall tiles.
-pub fn draw_world(canvas: &mut Canvas<Window>, state: &GameState, cam: &Camera, assets: &mut AssetManager, text: &mut TextRenderer) {
+/// Draw only the tilemap (ground tiles). No entities.
+/// Call this first, then optionally apply dithering, then call draw_entities.
+pub fn draw_tiles(canvas: &mut Canvas<Window>, state: &GameState, cam: &Camera, assets: &mut AssetManager) {
     let (sw, sh) = canvas.output_size().unwrap_or((1280, 900));
     let sw = sw as i32;
     let sh = sh as i32;
 
-    // Enable alpha blending for FOV overlay
     canvas.set_blend_mode(sdl2::render::BlendMode::Blend);
 
-    // Pre-compute depth row for each entity so we can draw them at the right time.
-    // depth_row = col + row in isometric space (the "diagonal" that determines draw order).
-    let mut entity_draw_order: Vec<(i32, usize)> = state.entities
-        .iter()
-        .enumerate()
-        .map(|(idx, e)| (entity_depth_row(e), idx))
-        .collect();
-    // Sort by depth row so we can iterate through them efficiently
-    entity_draw_order.sort_by_key(|(depth, _)| *depth);
-
-    let mut entity_cursor = 0;
-
-    // In isometric view, the draw order goes by "depth rows" where depth = col + row.
-    // For a map of size (cols, rows), depth ranges from 0 to (cols-1 + rows-1).
     let max_depth = state.tilemap.cols + state.tilemap.rows - 2;
 
     for depth in 0..=max_depth {
-        // Draw all tiles in this depth row (where col + row == depth).
-        // col ranges from max(0, depth - rows + 1) to min(depth, cols - 1).
         let col_min = (depth - state.tilemap.rows + 1).max(0);
         let col_max = depth.min(state.tilemap.cols - 1);
 
         for col in col_min..=col_max {
             let row = depth - col;
-
             let (cx, cy) = to_screen(col, row, cam, sw, sh);
 
             if !is_on_screen(cx, cy, sw, sh) {
@@ -187,7 +168,6 @@ pub fn draw_world(canvas: &mut Canvas<Window>, state: &GameState, cam: &Camera, 
             }
 
             let dim = state.fov_map.get_brightness(col, row);
-
             if dim < 0.01 {
                 continue;
             }
@@ -196,26 +176,37 @@ pub fn draw_world(canvas: &mut Canvas<Window>, state: &GameState, cam: &Camera, 
             let key = tile_texture_key(tile);
             draw_tile(canvas, assets, key, cx, cy, dim, CAMERA_ZOOM);
         }
-
-        // Draw entities whose depth row matches this depth
-        while entity_cursor < entity_draw_order.len() {
-            let (entity_depth, entity_idx) = entity_draw_order[entity_cursor];
-            if entity_depth > depth {
-                break;
-            }
-            draw_entity(canvas, assets, &state.entities[entity_idx], &state.fov_map, cam, sw, sh);
-            entity_cursor += 1;
-        }
     }
+}
 
-    // Draw any remaining entities (shouldn't happen, but safety net)
-    while entity_cursor < entity_draw_order.len() {
-        let (_, entity_idx) = entity_draw_order[entity_cursor];
+/// Draw entities and UI overlays. Call after draw_tiles (and optional dithering).
+/// Entities are depth-sorted and drawn with full color.
+pub fn draw_entities_and_ui(
+    canvas: &mut Canvas<Window>,
+    state: &GameState,
+    cam: &Camera,
+    assets: &mut AssetManager,
+    text: &mut TextRenderer,
+) {
+    let (sw, sh) = canvas.output_size().unwrap_or((1280, 900));
+    let sw = sw as i32;
+    let sh = sh as i32;
+
+    canvas.set_blend_mode(sdl2::render::BlendMode::Blend);
+
+    // Pre-compute depth row for each entity
+    let mut entity_draw_order: Vec<(i32, usize)> = state.entities
+        .iter()
+        .enumerate()
+        .map(|(idx, e)| (entity_depth_row(e), idx))
+        .collect();
+    entity_draw_order.sort_by_key(|(depth, _)| *depth);
+
+    for &(_, entity_idx) in &entity_draw_order {
         draw_entity(canvas, assets, &state.entities[entity_idx], &state.fov_map, cam, sw, sh);
-        entity_cursor += 1;
     }
 
-    // Draw click target marker (on top of everything)
+    // Draw click target marker
     if let Some((tx, ty)) = state.click_target {
         if state.fov_map.get_brightness(tx, ty) > 0.5 {
             draw_marker(canvas, tx, ty, cam, sw, sh);
@@ -277,5 +268,58 @@ fn draw_dialogue_box(
         let q = hint_tex.query();
         let dst = Rect::new(hint_x, hint_y, q.width, q.height);
         let _ = canvas.copy(hint_tex, None, dst);
+    }
+}
+
+/// Orchestrate the full render pass: tiles, optional post-process, entities+UI.
+/// Centralizes the render pipeline so main.rs stays thin.
+pub fn render_frame(
+    canvas: &mut Canvas<Window>,
+    state: &GameState,
+    cam: &Camera,
+    assets: &mut AssetManager,
+    text: &mut TextRenderer,
+    mode: PostProcessMode,
+    scope: ApplyScope,
+    dither_params: Option<&DitherParams>,
+    moebius_params: Option<&MoebiusParams>,
+) {
+    match mode {
+        PostProcessMode::Off => {
+            draw_tiles(canvas, state, cam, assets);
+            draw_entities_and_ui(canvas, state, cam, assets, text);
+        }
+        PostProcessMode::Dithering => {
+            if let Some(params) = dither_params {
+                match scope {
+                    ApplyScope::TilesOnly => {
+                        draw_tiles(canvas, state, cam, assets);
+                        post_process::apply_dither(canvas, params);
+                        draw_entities_and_ui(canvas, state, cam, assets, text);
+                    }
+                    ApplyScope::FullScreen => {
+                        draw_tiles(canvas, state, cam, assets);
+                        draw_entities_and_ui(canvas, state, cam, assets, text);
+                        post_process::apply_dither(canvas, params);
+                    }
+                }
+            }
+        }
+        PostProcessMode::Moebius => {
+            if let Some(params) = moebius_params {
+                match scope {
+                    ApplyScope::TilesOnly => {
+                        draw_tiles(canvas, state, cam, assets);
+                        post_process::apply_moebius(canvas, params);
+                        draw_entities_and_ui(canvas, state, cam, assets, text);
+                    }
+                    ApplyScope::FullScreen => {
+                        draw_tiles(canvas, state, cam, assets);
+                        draw_entities_and_ui(canvas, state, cam, assets, text);
+                        post_process::apply_moebius(canvas, params);
+                    }
+                }
+            }
+        }
     }
 }

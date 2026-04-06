@@ -22,7 +22,18 @@
       "Bash(/c/ffmpeg/bin/ffprobe -v error -show_entries stream=width,height -of csv=p=0 \"C:/Users/Urano/Documents/repositorios/rust/assets/tiles/Ground/ground_stone.png\")",
       "Bash(/c/ffmpeg/bin/ffprobe -v error -show_entries stream=width,height -of csv=p=0 \"C:/Users/Urano/Documents/repositorios/rust/assets/tiles/Ground/wall_stone_left_64x32.png\")",
       "Bash(/c/ffmpeg/bin/ffprobe -v error -show_entries stream=width,height -of csv=p=0 \"C:/Users/Urano/Documents/repositorios/rust/assets/tiles/Decor/prop_chest_wood.png\")",
-      "Bash(ffmpeg -i \"C:/Users/Urano/Videos/Captures/isometric-game-02.mp4\" -vf \"fps=15,scale=640:-1:flags=lanczos\" -y \"C:/Users/Urano/Documents/repositorios/rust/isometric-game-02.gif\")"
+      "Bash(ffmpeg -i \"C:/Users/Urano/Videos/Captures/isometric-game-02.mp4\" -vf \"fps=15,scale=640:-1:flags=lanczos\" -y \"C:/Users/Urano/Documents/repositorios/rust/isometric-game-02.gif\")",
+      "Bash(wc -l C:/Users/Urano/Documents/repositorios/rust/src/*.rs)",
+      "Bash(cp input.rs core/input.rs)",
+      "Bash(cp tilemap.rs core/tilemap.rs)",
+      "Bash(cp pathfinding.rs core/pathfinding.rs)",
+      "Bash(cp fov.rs core/fov.rs)",
+      "Bash(cp entity.rs core/entity.rs)",
+      "Bash(cp iso.rs render/iso.rs)",
+      "Bash(cp camera.rs render/camera.rs)",
+      "Bash(cp assets.rs render/assets.rs)",
+      "Bash(cp text.rs render/text.rs)",
+      "Bash(cp renderer.rs render/renderer.rs)"
     ]
   }
 }

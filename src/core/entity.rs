@@ -1,6 +1,6 @@
-use crate::iso::grid_to_screen;
-use crate::pathfinding::{self, Pos};
-use crate::tilemap::Tilemap;
+use crate::render::iso::grid_to_screen;
+use crate::core::pathfinding::{self, Pos};
+use crate::core::tilemap::Tilemap;
 
 const LERP_SPEED: f64 = 0.2;
 const PATH_STEP_TICKS: u32 = 8;

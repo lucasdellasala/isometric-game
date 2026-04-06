@@ -1,14 +1,6 @@
-mod assets;
-mod camera;
-mod entity;
-mod fov;
-mod game_state;
-mod input;
-mod iso;
-mod pathfinding;
-mod renderer;
-mod text;
-mod tilemap;
+mod core;
+mod render;
+mod ui;
 
 use sdl2::event::Event;
 use sdl2::keyboard::Scancode;
@@ -16,13 +8,16 @@ use sdl2::mouse::MouseButton;
 use sdl2::pixels::Color;
 use std::time::{Duration, Instant};
 
-use assets::AssetManager;
-use camera::Camera;
-use game_state::GameState;
-use input::GameInput;
-use iso::screen_to_grid;
-use text::TextRenderer;
-use tilemap::Tilemap;
+use render::assets::AssetManager;
+use render::camera::Camera;
+use render::iso::screen_to_grid;
+use render::text::TextRenderer;
+
+use core::game_state::GameState;
+use core::input::GameInput;
+use core::tilemap::Tilemap;
+
+use ui::config_menu::ConfigMenu;
 
 const WINDOW_WIDTH: u32 = 1280;
 const WINDOW_HEIGHT: u32 = 900;
@@ -57,7 +52,6 @@ fn main() {
     let mut event_pump = sdl_context.event_pump().expect("Failed to get event pump");
 
     // --- Asset Manager ---
-    // TextureCreator must live as long as the textures it creates (lifetime 'a)
     let texture_creator = canvas.texture_creator();
     let mut assets = AssetManager::new(&texture_creator);
     assets.generate_placeholders().expect("Failed to generate placeholder textures");
@@ -66,13 +60,14 @@ fn main() {
     let mut text_renderer = TextRenderer::new(&texture_creator, "assets/fonts/default.ttf")
         .expect("Failed to load font");
 
-    // --- Client-only state (not part of GameState) ---
+    // --- Client-only state ---
     let mut camera = Camera::new();
     let mut previous_time = Instant::now();
     let mut lag = Duration::ZERO;
     let mut running = true;
     let mut fps_timer = Instant::now();
     let mut frame_count: u32 = 0;
+    let mut config_menu = ConfigMenu::new();
 
     // --- Game Loop ---
     while running {
@@ -81,26 +76,43 @@ fn main() {
         previous_time = current_time;
         lag += elapsed;
 
-        // 1. PROCESS INPUT — translate SDL2 events to GameInput
+        // 1. PROCESS INPUT
         let player_id = state.local_player_id;
 
         for event in event_pump.poll_iter() {
             match event {
                 Event::Quit { .. } => running = false,
-                Event::KeyDown { scancode: Some(Scancode::Escape), .. } => running = false,
+                Event::KeyDown { scancode: Some(Scancode::Escape), .. } => {
+                    if config_menu.visible {
+                        config_menu.visible = false;
+                    } else {
+                        running = false;
+                    }
+                }
+                Event::KeyDown { scancode: Some(Scancode::F1), .. } => {
+                    config_menu.toggle();
+                }
+                // When config menu is open, arrow keys navigate it
+                Event::KeyDown { scancode: Some(sc), .. } if config_menu.visible => {
+                    match sc {
+                        Scancode::Up => config_menu.move_up(),
+                        Scancode::Down => config_menu.move_down(),
+                        Scancode::Left => config_menu.adjust_left(),
+                        Scancode::Right => config_menu.adjust_right(),
+                        _ => {}
+                    }
+                }
                 Event::KeyDown { scancode: Some(Scancode::E), .. } => {
                     if state.active_dialogue.is_some() {
-                        // Dismiss dialogue
                         state.apply_input(GameInput::DismissDialogue);
                     } else {
-                        // Try to interact with adjacent entity
                         state.apply_input(GameInput::Interact {
                             entity_id: player_id,
                         });
                     }
                 }
                 Event::MouseButtonDown { mouse_btn: MouseButton::Left, x, y, .. } => {
-                    if state.active_dialogue.is_none() {
+                    if state.active_dialogue.is_none() && !config_menu.visible {
                         let (ww, wh) = canvas.output_size().unwrap_or((WINDOW_WIDTH, WINDOW_HEIGHT));
                         let world_x = x - (ww as i32 / 2) + camera.x;
                         let world_y = y - (wh as i32 / 4) + camera.y;
@@ -121,9 +133,9 @@ fn main() {
             }
         }
 
-        // WASD input (held keys) — blocked during dialogue
+        // WASD input (held keys) — blocked during dialogue or when menu is open
         let keyboard = event_pump.keyboard_state();
-        let (dx, dy) = if state.active_dialogue.is_some() {
+        let (dx, dy) = if state.active_dialogue.is_some() || config_menu.visible {
             (0, 0)
         } else if keyboard.is_scancode_pressed(Scancode::W) || keyboard.is_scancode_pressed(Scancode::Up) {
             (0, -1)
@@ -149,7 +161,6 @@ fn main() {
 
             state.tick();
 
-            // Camera follows local player's visual position
             if let Some(player) = state.local_player() {
                 camera.x = player.visual_x as i32;
                 camera.y = player.visual_y as i32;
@@ -162,7 +173,23 @@ fn main() {
         canvas.set_draw_color(Color::RGB(20, 20, 40));
         canvas.clear();
 
-        renderer::draw_world(&mut canvas, &state, &camera, &mut assets, &mut text_renderer);
+        let dither_params = config_menu.dither_params();
+        let moebius_params = config_menu.moebius_params();
+
+        render::renderer::render_frame(
+            &mut canvas,
+            &state,
+            &camera,
+            &mut assets,
+            &mut text_renderer,
+            config_menu.mode,
+            config_menu.scope,
+            Some(&dither_params),
+            Some(&moebius_params),
+        );
+
+        // Config menu overlay (always on top, never post-processed)
+        config_menu.draw(&mut canvas, &mut text_renderer);
 
         canvas.present();
 

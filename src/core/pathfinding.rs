@@ -2,7 +2,7 @@ use std::collections::BinaryHeap;
 use std::collections::HashMap;
 use std::cmp::Ordering;
 
-use crate::tilemap::Tilemap;
+use crate::core::tilemap::Tilemap;
 
 /// A position on the grid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

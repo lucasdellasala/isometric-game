@@ -1,4 +1,4 @@
-use crate::tilemap::Tilemap;
+use crate::core::tilemap::Tilemap;
 
 // Brightness level for explored-but-not-visible tiles
 const EXPLORED_BRIGHTNESS: f64 = 0.35;
