@@ -1,7 +1,7 @@
 // Isometric projection math: convert between grid coords and screen coords
 
-pub const TILE_WIDTH: i32 = 64;
-pub const TILE_HEIGHT: i32 = 32;
+pub const TILE_WIDTH: i32 = 128;
+pub const TILE_HEIGHT: i32 = 64;
 
 /// Convert grid coordinates (col, row) to screen pixel coordinates (x, y).
 /// Returns the top-center point of the diamond tile.

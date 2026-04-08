@@ -58,16 +58,27 @@ impl<'a> AssetManager<'a> {
         self.textures.get_mut(key)
     }
 
+    /// Ground tile style subfolder. Change this to switch between visual styles.
+    /// Available: "gradient", "flat"
+    const GROUND_STYLE: &'static str = "gradient";
+
     /// Load real assets where available, generate placeholders for the rest.
     pub fn generate_placeholders(&mut self) -> Result<(), String> {
-        // --- Ground tiles (Woulette tileset, Ground/) ---
-        if self.load_image("tile_grass", "assets/tiles/Ground/ground_stone.png").is_err() {
+        // --- Ground tiles (style selected by GROUND_STYLE) ---
+        let ground = format!("assets/tiles/CelShading/ground/{}", Self::GROUND_STYLE);
+
+        if self.load_image("tile_grass", &format!("{ground}/tile_grass.png")).is_err() {
             self.create_tile_texture("tile_grass", Color::RGB(80, 150, 80), Color::RGB(60, 120, 60))?;
         }
-        if self.load_image("tile_dirt", "assets/tiles/Ground/ground_dungeon.png").is_err() {
+        if self.load_image("tile_dirt", &format!("{ground}/tile_dirt.png")).is_err() {
             self.create_tile_texture("tile_dirt", Color::RGB(150, 120, 70), Color::RGB(120, 95, 50))?;
         }
-        self.create_tile_texture("tile_water", Color::RGB(60, 100, 180), Color::RGB(40, 75, 150))?;
+        if self.load_image("tile_stone", &format!("{ground}/tile_stone.png")).is_err() {
+            self.create_tile_texture("tile_stone", Color::RGB(160, 160, 160), Color::RGB(140, 140, 140))?;
+        }
+        if self.load_image("tile_water", &format!("{ground}/tile_water.png")).is_err() {
+            self.create_tile_texture("tile_water", Color::RGB(60, 100, 180), Color::RGB(40, 75, 150))?;
+        }
 
         // Wall sprites (directional faces)
         let _ = self.load_image("tile_wall_left", "assets/tiles/Ground/wall_stone_left_64x32.png");
@@ -131,10 +142,32 @@ impl<'a> AssetManager<'a> {
         let _ = self.load_image("cliff_left", &format!("{v1}/cliffLeft.png"));
         let _ = self.load_image("cliff_left_2", &format!("{v1}/cliffLeft2.png"));
 
-        // --- Entity placeholders ---
-        self.create_entity_texture("entity_player", Color::RGB(200, 60, 60))?;
-        self.create_entity_texture("entity_npc", Color::RGB(60, 60, 200))?;
-        self.create_entity_texture("entity_enemy", Color::RGB(200, 60, 200))?;
+        // --- Entity sprites ---
+        let cel = "assets/tiles/CelShading";
+
+        // Player: 8 idle sprites (entity_player_000 through entity_player_315)
+        for angle in (0..360).step_by(45) {
+            let key = format!("entity_player_{angle:03}");
+            let path = format!("{cel}/entity_player_{angle:03}.png");
+            if self.load_image(&key, &path).is_err() {
+                self.create_entity_texture(&key, Color::RGB(200, 60, 60))?;
+            }
+        }
+
+        // Player: 8 directions × 8 walk frames (entity_player_walk_000_0 through _315_7)
+        for angle in (0..360).step_by(45) {
+            for frame in 0..8 {
+                let key = format!("entity_player_walk_{angle:03}_{frame}");
+                let path = format!("{cel}/walk/entity_player_walk_{angle:03}_{frame}.png");
+                let _ = self.load_image(&key, &path);
+            }
+        }
+        if self.load_image("entity_npc", "assets/tiles/CelShading/entity_npc.png").is_err() {
+            self.create_entity_texture("entity_npc", Color::RGB(60, 60, 200))?;
+        }
+        if self.load_image("entity_enemy", "assets/tiles/CelShading/entity_enemy.png").is_err() {
+            self.create_entity_texture("entity_enemy", Color::RGB(200, 60, 200))?;
+        }
 
         Ok(())
     }

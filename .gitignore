@@ -1,1 +1,16 @@
 /target
+/build
+
+# Blender source files (heavy, not needed at runtime)
+*.blend
+*.blend1
+
+# 3D model files
+*.fbx
+
+# Build artifacts
+*.rar
+*.gif
+
+# Blender mesh bundles
+assets/human-base-meshes-bundle-v1.4.1/

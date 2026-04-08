@@ -9,7 +9,7 @@ use sdl2::pixels::Color;
 use std::time::{Duration, Instant};
 
 use render::assets::AssetManager;
-use render::camera::Camera;
+use render::camera::{Camera, CAMERA_ZOOM};
 use render::iso::screen_to_grid;
 use render::text::TextRenderer;
 
@@ -18,6 +18,7 @@ use core::input::GameInput;
 use core::tilemap::Tilemap;
 
 use ui::config_menu::ConfigMenu;
+use ui::sprite_debug::SpriteDebug;
 
 const WINDOW_WIDTH: u32 = 1280;
 const WINDOW_HEIGHT: u32 = 900;
@@ -68,6 +69,10 @@ fn main() {
     let mut fps_timer = Instant::now();
     let mut frame_count: u32 = 0;
     let mut config_menu = ConfigMenu::new();
+    let mut sprite_debug = SpriteDebug::new(
+        render::renderer::ENTITY_OFFSET_X,
+        render::renderer::ENTITY_OFFSET_Y,
+    );
 
     // --- Game Loop ---
     while running {
@@ -92,6 +97,23 @@ fn main() {
                 Event::KeyDown { scancode: Some(Scancode::F1), .. } => {
                     config_menu.toggle();
                 }
+                Event::KeyDown { scancode: Some(Scancode::F2), .. } => {
+                    sprite_debug.toggle();
+                }
+                // When sprite debug is active, arrows adjust offsets, Tab toggles mode
+                Event::KeyDown { scancode: Some(sc), .. } if sprite_debug.active => {
+                    let facing = state.local_player()
+                        .map(|p| p.facing)
+                        .unwrap_or(0);
+                    match sc {
+                        Scancode::Up => sprite_debug.adjust(facing, 0, -1),
+                        Scancode::Down => sprite_debug.adjust(facing, 0, 1),
+                        Scancode::Left => sprite_debug.adjust(facing, -1, 0),
+                        Scancode::Right => sprite_debug.adjust(facing, 1, 0),
+                        Scancode::Tab => sprite_debug.toggle_mode(),
+                        _ => {}
+                    }
+                }
                 // When config menu is open, arrow keys navigate it
                 Event::KeyDown { scancode: Some(sc), .. } if config_menu.visible => {
                     match sc {
@@ -114,8 +136,9 @@ fn main() {
                 Event::MouseButtonDown { mouse_btn: MouseButton::Left, x, y, .. } => {
                     if state.active_dialogue.is_none() && !config_menu.visible {
                         let (ww, wh) = canvas.output_size().unwrap_or((WINDOW_WIDTH, WINDOW_HEIGHT));
-                        let world_x = x - (ww as i32 / 2) + camera.x;
-                        let world_y = y - (wh as i32 / 4) + camera.y;
+                        // Undo the zoom applied in renderer::to_screen
+                        let world_x = ((x - ww as i32 / 2) as f64 / CAMERA_ZOOM) as i32 + camera.x;
+                        let world_y = ((y - wh as i32 / 4) as f64 / CAMERA_ZOOM) as i32 + camera.y;
                         let (grid_x, grid_y) = screen_to_grid(world_x, world_y);
 
                         if grid_x >= 0 && grid_x < state.tilemap.cols
@@ -137,13 +160,13 @@ fn main() {
         let keyboard = event_pump.keyboard_state();
         let (dx, dy) = if state.active_dialogue.is_some() || config_menu.visible {
             (0, 0)
-        } else if keyboard.is_scancode_pressed(Scancode::W) || keyboard.is_scancode_pressed(Scancode::Up) {
+        } else if keyboard.is_scancode_pressed(Scancode::W) {
             (0, -1)
-        } else if keyboard.is_scancode_pressed(Scancode::S) || keyboard.is_scancode_pressed(Scancode::Down) {
+        } else if keyboard.is_scancode_pressed(Scancode::S) {
             (0, 1)
-        } else if keyboard.is_scancode_pressed(Scancode::A) || keyboard.is_scancode_pressed(Scancode::Left) {
+        } else if keyboard.is_scancode_pressed(Scancode::A) {
             (-1, 0)
-        } else if keyboard.is_scancode_pressed(Scancode::D) || keyboard.is_scancode_pressed(Scancode::Right) {
+        } else if keyboard.is_scancode_pressed(Scancode::D) {
             (1, 0)
         } else {
             (0, 0)
@@ -173,6 +196,18 @@ fn main() {
         canvas.set_draw_color(Color::RGB(20, 20, 40));
         canvas.clear();
 
+        // Compute hover tile from current mouse position
+        let mouse_state = event_pump.mouse_state();
+        let (ww, wh) = canvas.output_size().unwrap_or((WINDOW_WIDTH, WINDOW_HEIGHT));
+        let hover_world_x = ((mouse_state.x() - ww as i32 / 2) as f64 / CAMERA_ZOOM) as i32 + camera.x;
+        let hover_world_y = ((mouse_state.y() - wh as i32 / 4) as f64 / CAMERA_ZOOM) as i32 + camera.y;
+        let (hgx, hgy) = screen_to_grid(hover_world_x, hover_world_y);
+        let hover_tile = if hgx >= 0 && hgx < state.tilemap.cols && hgy >= 0 && hgy < state.tilemap.rows {
+            Some((hgx, hgy))
+        } else {
+            None
+        };
+
         let dither_params = config_menu.dither_params();
         let moebius_params = config_menu.moebius_params();
 
@@ -186,6 +221,8 @@ fn main() {
             config_menu.scope,
             Some(&dither_params),
             Some(&moebius_params),
+            &sprite_debug,
+            hover_tile,
         );
 
         // Config menu overlay (always on top, never post-processed)

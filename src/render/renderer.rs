@@ -7,13 +7,24 @@ use crate::render::assets::AssetManager;
 use crate::render::camera::{Camera, CAMERA_ZOOM};
 use crate::render::post_process::{self, ApplyScope, DitherParams, MoebiusParams, PostProcessMode};
 use crate::core::entity::{Entity, EntityKind};
+use crate::ui::sprite_debug::SpriteDebug;
 use crate::core::game_state::GameState;
 use crate::render::iso::{grid_to_screen, TILE_HEIGHT, TILE_WIDTH};
 use crate::render::text::TextRenderer;
 #[allow(unused_imports)]
 use crate::core::tilemap::TileKind;
 
-const CULL_MARGIN: i32 = 64;
+const CULL_MARGIN: i32 = TILE_WIDTH;
+
+/// Manual offset to adjust entity sprite positioning on the tile.
+/// Tweak these if the sprite has transparent padding that shifts it off-center.
+/// Positive X = move sprite right, Positive Y = move sprite down.
+pub const ENTITY_OFFSET_X: i32 = 2;
+pub const ENTITY_OFFSET_Y: i32 = 30;
+
+/// Scale factor for entity sprites relative to CAMERA_ZOOM.
+/// 1.0 = full size, 0.66 = two thirds.
+const ENTITY_SCALE: f64 = 0.66;
 
 /// Convert grid position to screen position with camera offset and zoom applied.
 fn to_screen(grid_x: i32, grid_y: i32, cam: &Camera, screen_w: i32, screen_h: i32) -> (i32, i32) {
@@ -29,6 +40,20 @@ fn is_on_screen(cx: i32, cy: i32, screen_w: i32, screen_h: i32) -> bool {
         && cx < screen_w + CULL_MARGIN + TILE_WIDTH
         && cy > -CULL_MARGIN - TILE_HEIGHT * 2
         && cy < screen_h + CULL_MARGIN + TILE_HEIGHT
+}
+
+/// Draw a hover highlight (diamond outline) on the tile under the mouse cursor.
+fn draw_hover(canvas: &mut Canvas<Window>, grid_x: i32, grid_y: i32, cam: &Camera, sw: i32, sh: i32) {
+    let (cx, cy) = to_screen(grid_x, grid_y, cam, sw, sh);
+    let hw = (TILE_WIDTH as f64 * CAMERA_ZOOM / 2.0) as i32;
+    let hh = (TILE_HEIGHT as f64 * CAMERA_ZOOM / 2.0) as i32;
+    let mid_y = cy + hh;
+
+    canvas.set_draw_color(Color::RGBA(255, 255, 255, 120));
+    let _ = canvas.draw_line(Point::new(cx, cy), Point::new(cx + hw, mid_y));
+    let _ = canvas.draw_line(Point::new(cx + hw, mid_y), Point::new(cx, cy + hh * 2));
+    let _ = canvas.draw_line(Point::new(cx, cy + hh * 2), Point::new(cx - hw, mid_y));
+    let _ = canvas.draw_line(Point::new(cx - hw, mid_y), Point::new(cx, cy));
 }
 
 /// Draw a target marker (small yellow diamond) on a tile.
@@ -52,17 +77,23 @@ fn tile_texture_key(kind: TileKind) -> &'static str {
     match kind {
         TileKind::Grass => "tile_grass",
         TileKind::Dirt => "tile_dirt",
-        TileKind::Stone => "tile_grass",
+        TileKind::Stone => "tile_stone",
         TileKind::Water => "tile_water",
     }
 }
 
-/// Get the texture key for an entity kind.
-fn entity_texture_key(kind: EntityKind) -> &'static str {
-    match kind {
-        EntityKind::Player => "entity_player",
-        EntityKind::Npc => "entity_npc",
-        EntityKind::Enemy => "entity_enemy",
+/// Get the texture key for an entity, considering facing and walk animation.
+fn entity_texture_key(entity: &Entity) -> String {
+    match entity.kind {
+        EntityKind::Player => {
+            if let Some(frame) = entity.walk_frame() {
+                format!("entity_player_walk_{:03}_{}", entity.facing, frame)
+            } else {
+                format!("entity_player_{:03}", entity.facing)
+            }
+        }
+        EntityKind::Npc => String::from("entity_npc"),
+        EntityKind::Enemy => String::from("entity_enemy"),
     }
 }
 
@@ -103,6 +134,8 @@ fn draw_entity(
     cam: &Camera,
     sw: i32,
     sh: i32,
+    sprite_debug: &SpriteDebug,
+    text: &mut TextRenderer,
 ) {
     // Don't draw entities in unexplored or dark areas
     let brightness = fov_map.get_brightness(entity.grid_x, entity.grid_y);
@@ -113,22 +146,111 @@ fn draw_entity(
     let cx = ((entity.visual_x as i32 - cam.x) as f64 * CAMERA_ZOOM) as i32 + sw / 2;
     let cy = ((entity.visual_y as i32 - cam.y) as f64 * CAMERA_ZOOM) as i32 + sh / 4;
 
-    let key = entity_texture_key(entity.kind);
+    let key = entity_texture_key(entity);
 
-    if let Some(texture) = assets.get_mut(key) {
+    if let Some(texture) = assets.get_mut(&key) {
         let query = texture.query();
-        let w = (query.width as f64 * CAMERA_ZOOM) as u32;
-        let h = (query.height as f64 * CAMERA_ZOOM) as u32;
+        let entity_zoom = CAMERA_ZOOM * ENTITY_SCALE;
+        let w = (query.width as f64 * entity_zoom) as u32;
+        let h = (query.height as f64 * entity_zoom) as u32;
         let th = (TILE_HEIGHT as f64 * CAMERA_ZOOM) as i32;
-        // Center the sprite on the tile, raise it above the ground
+
+        // Player always uses sprite_debug offsets (persisted between debug sessions).
+        // Other entities use the constants.
+        let (off_x, off_y) = if entity.kind == EntityKind::Player {
+            let (dx, dy) = sprite_debug.get_offset(entity.facing);
+            ((dx as f64 * CAMERA_ZOOM) as i32, (dy as f64 * CAMERA_ZOOM) as i32)
+        } else {
+            let ox = (ENTITY_OFFSET_X as f64 * CAMERA_ZOOM) as i32;
+            let oy = (ENTITY_OFFSET_Y as f64 * CAMERA_ZOOM) as i32;
+            (ox, oy)
+        };
+
         let dst = Rect::new(
-            cx - w as i32 / 2,
-            cy + th / 2 - h as i32,
+            cx - w as i32 / 2 + off_x,
+            cy + th / 2 - h as i32 + off_y,
             w,
             h,
         );
         let _ = canvas.copy(texture, None, dst);
+
+        // Show sprite key label above player when debug is active
+        if sprite_debug.active && entity.kind == EntityKind::Player {
+            let (raw_x, raw_y) = sprite_debug.get_offset(entity.facing);
+            let label = format!("{} | offset({},{})", key, raw_x, raw_y);
+            if let Some(tex) = text.render(&label, 14, Color::RGB(255, 255, 0)) {
+                let q = tex.query();
+                let label_dst = Rect::new(
+                    cx - q.width as i32 / 2,
+                    dst.y() - q.height as i32 - 4,
+                    q.width,
+                    q.height,
+                );
+                let _ = canvas.copy(tex, None, label_dst);
+            }
+
+            // Show mode indicator
+            let mode_label = if sprite_debug.per_direction_mode {
+                format!("[TAB] Mode: per-direction ({:03})", entity.facing)
+            } else {
+                "[TAB] Mode: base offset".to_string()
+            };
+            if let Some(tex) = text.render(&mode_label, 12, Color::RGB(200, 200, 200)) {
+                let q = tex.query();
+                let mode_dst = Rect::new(
+                    cx - q.width as i32 / 2,
+                    dst.y() - q.height as i32 - 22,
+                    q.width,
+                    q.height,
+                );
+                let _ = canvas.copy(tex, None, mode_dst);
+            }
+        }
     }
+}
+
+/// Draw an isometric wall cube at a grid position.
+/// height_tiles = how many tile heights tall the wall is.
+/// Sides are solid gray, top is the stone tile texture.
+fn draw_wall_cube(
+    canvas: &mut Canvas<Window>,
+    assets: &mut AssetManager,
+    cx: i32,
+    cy: i32,
+    height_tiles: i32,
+    brightness: f64,
+) {
+    let hw = (TILE_WIDTH as f64 * CAMERA_ZOOM / 2.0) as i32;
+    let hh = (TILE_HEIGHT as f64 * CAMERA_ZOOM / 2.0) as i32;
+    let cube_h = (TILE_HEIGHT as f64 * CAMERA_ZOOM * height_tiles as f64) as i32;
+
+    let top_y = cy - cube_h;
+    let top_center = top_y + hh;
+
+    // Left face: solid gray, slightly lighter
+    let left_b = (brightness * 0.7).min(1.0);
+    let left_color = Color::RGB((130.0 * left_b) as u8, (130.0 * left_b) as u8, (135.0 * left_b) as u8);
+    canvas.set_draw_color(left_color);
+    for h in 0..cube_h {
+        let _ = canvas.draw_line(
+            Point::new(cx - hw, top_center + h),
+            Point::new(cx, top_y + hh * 2 + h),
+        );
+    }
+
+    // Right face: solid gray, darker
+    let right_b = (brightness * 0.5).min(1.0);
+    let right_color = Color::RGB((110.0 * right_b) as u8, (110.0 * right_b) as u8, (115.0 * right_b) as u8);
+    canvas.set_draw_color(right_color);
+    for h in 0..cube_h {
+        let _ = canvas.draw_line(
+            Point::new(cx, top_y + hh * 2 + h),
+            Point::new(cx + hw, top_center + h),
+        );
+    }
+
+    // Top face: stone tile texture
+    draw_tile(canvas, assets, "tile_stone", cx, top_y, brightness, CAMERA_ZOOM);
 }
 
 /// Compute the isometric depth row for an entity.
@@ -175,6 +297,11 @@ pub fn draw_tiles(canvas: &mut Canvas<Window>, state: &GameState, cam: &Camera, 
             let tile = state.tilemap.get(col, row);
             let key = tile_texture_key(tile);
             draw_tile(canvas, assets, key, cx, cy, dim, CAMERA_ZOOM);
+
+            // Test wall cube at grid position (1, 0), 2 tiles tall
+            if col == 1 && row == 0 {
+                draw_wall_cube(canvas, assets, cx, cy, 2, dim);
+            }
         }
     }
 }
@@ -187,6 +314,8 @@ pub fn draw_entities_and_ui(
     cam: &Camera,
     assets: &mut AssetManager,
     text: &mut TextRenderer,
+    sprite_debug: &SpriteDebug,
+    hover_tile: Option<(i32, i32)>,
 ) {
     let (sw, sh) = canvas.output_size().unwrap_or((1280, 900));
     let sw = sw as i32;
@@ -203,7 +332,12 @@ pub fn draw_entities_and_ui(
     entity_draw_order.sort_by_key(|(depth, _)| *depth);
 
     for &(_, entity_idx) in &entity_draw_order {
-        draw_entity(canvas, assets, &state.entities[entity_idx], &state.fov_map, cam, sw, sh);
+        draw_entity(canvas, assets, &state.entities[entity_idx], &state.fov_map, cam, sw, sh, sprite_debug, text);
+    }
+
+    // Draw hover highlight on tile under mouse
+    if let Some((hx, hy)) = hover_tile {
+        draw_hover(canvas, hx, hy, cam, sw, sh);
     }
 
     // Draw click target marker
@@ -283,11 +417,13 @@ pub fn render_frame(
     scope: ApplyScope,
     dither_params: Option<&DitherParams>,
     moebius_params: Option<&MoebiusParams>,
+    sprite_debug: &SpriteDebug,
+    hover_tile: Option<(i32, i32)>,
 ) {
     match mode {
         PostProcessMode::Off => {
             draw_tiles(canvas, state, cam, assets);
-            draw_entities_and_ui(canvas, state, cam, assets, text);
+            draw_entities_and_ui(canvas, state, cam, assets, text, sprite_debug, hover_tile);
         }
         PostProcessMode::Dithering => {
             if let Some(params) = dither_params {
@@ -295,11 +431,11 @@ pub fn render_frame(
                     ApplyScope::TilesOnly => {
                         draw_tiles(canvas, state, cam, assets);
                         post_process::apply_dither(canvas, params);
-                        draw_entities_and_ui(canvas, state, cam, assets, text);
+                        draw_entities_and_ui(canvas, state, cam, assets, text, sprite_debug, hover_tile);
                     }
                     ApplyScope::FullScreen => {
                         draw_tiles(canvas, state, cam, assets);
-                        draw_entities_and_ui(canvas, state, cam, assets, text);
+                        draw_entities_and_ui(canvas, state, cam, assets, text, sprite_debug, hover_tile);
                         post_process::apply_dither(canvas, params);
                     }
                 }
@@ -311,11 +447,11 @@ pub fn render_frame(
                     ApplyScope::TilesOnly => {
                         draw_tiles(canvas, state, cam, assets);
                         post_process::apply_moebius(canvas, params);
-                        draw_entities_and_ui(canvas, state, cam, assets, text);
+                        draw_entities_and_ui(canvas, state, cam, assets, text, sprite_debug, hover_tile);
                     }
                     ApplyScope::FullScreen => {
                         draw_tiles(canvas, state, cam, assets);
-                        draw_entities_and_ui(canvas, state, cam, assets, text);
+                        draw_entities_and_ui(canvas, state, cam, assets, text, sprite_debug, hover_tile);
                         post_process::apply_moebius(canvas, params);
                     }
                 }
