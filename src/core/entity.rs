@@ -127,7 +127,7 @@ impl Entity {
             anim_tick: 0,
             anim_moving: false,
             npc_variant: if kind == EntityKind::Npc { Some(NpcVariant::random()) } else { None },
-            idle_rotate_timer: if kind == EntityKind::Npc {
+            idle_rotate_timer: if kind == EntityKind::Npc || kind == EntityKind::Enemy {
                 rand::thread_rng().gen_range(config::IDLE_ROTATE_MIN_TICKS..=config::IDLE_ROTATE_MAX_TICKS)
             } else { 0 },
             path: vec![],
@@ -249,7 +249,7 @@ impl Entity {
         }
 
         // NPC idle rotation: randomly change facing every few seconds
-        if self.kind == EntityKind::Npc {
+        if self.kind == EntityKind::Npc || self.kind == EntityKind::Enemy {
             if self.idle_rotate_timer > 0 {
                 self.idle_rotate_timer -= 1;
             } else {

@@ -8,8 +8,8 @@ Registro de cambios del RPG isometrico multijugador estilo D&D, construido desde
 
 ### Agregado
 - **`config.rs` centralizado:** Todas las constantes de configuración (colores, tamaños, velocidades, umbrales) viven en `src/config.rs`. Ningún valor visual o de gameplay se hardcodea inline
-- **Highlight de interacción con NPCs:** Contorno con la forma del sprite (no rectángulo) en verde para NPCs amigables y rojo para enemigos. Se muestra al pasar el mouse o al estar adyacente. Prompt `[E] Hablar` cuando se puede interactuar
-- **Transparencia de oclusión:** Sprites (NPCs, muros, pastos) que tapan al player se dibujan semi-transparentes. Evaluación individual por sprite con chequeo de depth row
+- **Highlight de interacción con NPCs:** Contorno exterior pre-calculado al cargar (detección de bordes en los PNGs) en verde para NPCs amigables y rojo para enemigos. Color uniforme independiente del color del sprite. Se muestra al pasar el mouse (hover) o al estar adyacente (Chebyshev ≤ 1). Prompt `[E] Hablar` cuando se puede interactuar
+- **Transparencia de oclusión:** Entidades cercanas al player (Chebyshev ≤ 1) con depth row mayor o mismo tile se dibujan semi-transparentes (alpha 128). Muros y pastos usan intersección de rects con player_rect pre-calculado. Enemies comparten el sistema con NPCs
 - **Pasto decorativo:** 8 sprites de hierba distribuidos pseudo-aleatoriamente sobre tiles Grass con oclusión parcial (detrás/delante del player)
 - **Posiciones bloqueadas:** `GameState.blocked: HashSet<(i32,i32)>` para objetos que bloquean movimiento y pathfinding
 - **Spritesheets de NPCs con variantes:** 9 variantes visuales (african, caucasian, latino x black/brown/cream) con spritesheets de 1024x256 (8 direcciones por hoja)

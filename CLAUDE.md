@@ -75,6 +75,8 @@ src/
 - **Spritesheet tiles:** Extracted from spritesheets to individual 128×64 PNGs with diamond transparency mask. AssetManager loads them as regular textures
 - **NPC spritesheets:** 1024×256 PNGs with 8 directional frames (128×256 each). Renderer uses src_rect to select frame
 - **Grass decorations:** Generated per-tile with deterministic LCG PRNG. Back tufts drawn with tiles (dithered), front tufts drawn after entities (occlude player feet)
+- **Entity outlines:** Pre-computed at load time by scanning sprite PNGs for edge pixels (transparent with opaque neighbor). Stored as `Vec<(i32,i32)>` per frame. Drawn with `canvas.fill_rect()` for uniform color regardless of sprite content
+- **Occlusion transparency:** Entities within Chebyshev distance ≤ 1 from player with higher depth row → alpha 128. Depth-row based, not pixel intersection (see IDEAS.md #2 for rationale)
 
 ### Assets structure
 ```

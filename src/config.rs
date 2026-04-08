@@ -72,7 +72,7 @@ pub const EXPLORED_BRIGHTNESS: f64 = 0.35;
 // =============================================================================
 
 /// Outline thickness in pixels for entity highlight.
-pub const HIGHLIGHT_OUTLINE_PX: i32 = 4;
+pub const HIGHLIGHT_OUTLINE_PX: i32 = 2;
 
 /// Highlight color for friendly NPCs (green).
 pub const HIGHLIGHT_COLOR_NPC: Color = Color::RGB(100, 255, 100);

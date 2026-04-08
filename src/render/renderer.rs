@@ -122,7 +122,11 @@ fn entity_texture_info(entity: &Entity) -> (String, Option<Rect>) {
                 (String::from("entity_npc"), None)
             }
         }
-        EntityKind::Enemy => (String::from("entity_enemy"), None),
+        EntityKind::Enemy => {
+            let frame = facing_to_npc_frame(entity.facing);
+            let src = Rect::new((frame * 128) as i32, 0, 128, 256);
+            (String::from("entity_enemy"), Some(src))
+        }
     }
 }
 
@@ -187,6 +191,7 @@ fn draw_entity(
     debug_menu: &DebugMenu,
     text: &mut TextRenderer,
     player_rect: Option<Rect>,
+    player_depth: i32,
     highlight: &HighlightCtx,
 ) -> Option<Rect> {
     // Don't draw entities in unexplored or dark areas
@@ -233,13 +238,26 @@ fn draw_entity(
         );
 
         // If this entity is in front of the player and overlaps, draw semi-transparent
+        // Make entity semi-transparent if it's directly in front of the player.
+        // Only applies to entities within 1 tile (Chebyshev distance) AND with a higher
+        // depth row (or same tile). Entities further away stay opaque.
+        //
+        // NOTE: We tried pixel-level rect intersection (full rect, bottom half, bottom third)
+        // to only transparentize when sprites actually overlap visually, but the tall sprite
+        // rects (128x256) caused false positives on diagonal-back tiles. For entities of
+        // size=1 tile, depth-row + proximity check is simpler and visually correct. If we add
+        // larger entities or need precision, revisit with per-pixel collision or tighter
+        // bounding boxes. See IDEAS.md #2 for context.
         if entity.kind != EntityKind::Player {
-            if let Some(pr) = player_rect {
-                if dst.has_intersection(pr) {
-                    texture.set_alpha_mod(128);
-                } else {
-                    texture.set_alpha_mod(255);
-                }
+            let edx = (entity.grid_x - highlight.player_x).abs();
+            let edy = (entity.grid_y - highlight.player_y).abs();
+            let is_nearby = edx <= 1 && edy <= 1;
+            let entity_depth = entity_depth_row(entity);
+            let same_tile = edx == 0 && edy == 0;
+            if is_nearby && (same_tile || entity_depth > player_depth) {
+                texture.set_alpha_mod(128);
+            } else {
+                texture.set_alpha_mod(255);
             }
         }
 
@@ -251,33 +269,37 @@ fn draw_entity(
 
         // Interaction highlight for non-player entities
         if entity.kind != EntityKind::Player {
-            let is_adjacent = (entity.grid_x - highlight.player_x).abs() + (entity.grid_y - highlight.player_y).abs() == 1;
+            // Chebyshev distance <= 1: all 8 surrounding tiles + same tile
+            let dx = (entity.grid_x - highlight.player_x).abs();
+            let dy = (entity.grid_y - highlight.player_y).abs();
+            let is_adjacent = dx <= 1 && dy <= 1;
             let is_hovered = highlight.hover_tile == Some((entity.grid_x, entity.grid_y));
 
             if is_adjacent || is_hovered {
                 let color = entity_highlight_color(entity.kind);
-                let alpha = if is_adjacent { config::HIGHLIGHT_ALPHA_ADJACENT } else { config::HIGHLIGHT_ALPHA_HOVER };
                 let px = config::HIGHLIGHT_OUTLINE_PX;
-                let half = px / 2;
 
-                // Re-fetch texture and draw tinted overlay copies (shifted in 8+ directions = outline)
-                if let Some(tex2) = assets.get_mut(&key) {
-                    tex2.set_color_mod(color.r, color.g, color.b);
-                    tex2.set_alpha_mod(alpha);
+                // Use pre-computed outline points for uniform color.
+                // The outline key is "{asset_key}_{frame_index}".
+                let frame_idx = src_rect.map(|r| r.x() / 128).unwrap_or(0);
+                let outline_key = format!("{}_{}", key, frame_idx);
 
-                    // Draw the sprite offset in cardinal + diagonal directions at full and half thickness
-                    for &(ox, oy) in &[(-px,0),(px,0),(0,-px),(0,px),(-px,-px),(px,-px),(-px,px),(px,px),(-half,0),(half,0),(0,-half),(0,half)] {
-                        let outline_dst = Rect::new(dst.x() + ox, dst.y() + oy, dst.width(), dst.height());
-                        let _ = canvas.copy(tex2, src_rect, outline_dst);
+                if let Some(points) = assets.get_outline(&outline_key) {
+                    // Scale factor from sprite pixels to screen pixels
+                    let entity_zoom = zoom * config::ENTITY_SCALE;
+
+                    canvas.set_draw_color(color);
+                    for &(ox, oy) in points {
+                        let screen_x = dst.x() + (ox as f64 * entity_zoom) as i32;
+                        let screen_y = dst.y() + (oy as f64 * entity_zoom) as i32;
+                        // Draw a filled square of HIGHLIGHT_OUTLINE_PX size for thickness
+                        let _ = canvas.fill_rect(Rect::new(
+                            screen_x - px / 2,
+                            screen_y - px / 2,
+                            px as u32,
+                            px as u32,
+                        ));
                     }
-
-                    // Reset and redraw the original sprite on top
-                    tex2.set_color_mod(255, 255, 255);
-                    tex2.set_alpha_mod(255);
-                    let b2 = (brightness * 255.0) as u8;
-                    tex2.set_color_mod(b2, b2, b2);
-                    let _ = canvas.copy(tex2, src_rect, dst);
-                    tex2.set_color_mod(255, 255, 255);
                 }
 
                 // Show action prompt above the entity
@@ -509,6 +531,10 @@ pub fn draw_entities_and_ui(
 
     canvas.set_blend_mode(sdl2::render::BlendMode::Blend);
 
+    let player_depth = state.local_player()
+        .map(|p| entity_depth_row(p))
+        .unwrap_or(0);
+
     // Pre-compute depth row for each entity
     let mut entity_draw_order: Vec<(i32, usize)> = state.entities
         .iter()
@@ -538,7 +564,7 @@ pub fn draw_entities_and_ui(
             if entity_depth > depth {
                 break;
             }
-            if let Some(pr) = draw_entity(canvas, assets, &state.entities[entity_idx], &state.fov_map, cam, sw, sh, zoom, debug_menu, text, player_rect, &highlight) {
+            if let Some(pr) = draw_entity(canvas, assets, &state.entities[entity_idx], &state.fov_map, cam, sw, sh, zoom, debug_menu, text, player_rect, player_depth, &highlight) {
                 player_rect = Some(pr);
             }
             entity_cursor += 1;
@@ -569,7 +595,7 @@ pub fn draw_entities_and_ui(
     // Draw remaining entities
     while entity_cursor < entity_draw_order.len() {
         let (_, entity_idx) = entity_draw_order[entity_cursor];
-        if let Some(pr) = draw_entity(canvas, assets, &state.entities[entity_idx], &state.fov_map, cam, sw, sh, zoom, debug_menu, text, player_rect, &highlight) {
+        if let Some(pr) = draw_entity(canvas, assets, &state.entities[entity_idx], &state.fov_map, cam, sw, sh, zoom, debug_menu, text, player_rect, player_depth, &highlight) {
             player_rect = Some(pr);
         }
         entity_cursor += 1;

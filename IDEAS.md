@@ -22,18 +22,18 @@ Generar sprites de pasto orgánicos con Python/PIL y distribuirlos pseudo-aleato
 
 ## 2. Transparencia de objetos que tapan al player — `hecho`
 
-Cuando un sprite se dibuja **delante** del player en el depth order y su rectángulo en pantalla intersecta con el del player, se dibuja semi-transparente (alpha 128) para que el jugador siga siendo visible detrás de muros, NPCs, árboles, etc.
+Entidades (NPCs, enemies) cercanas al player se dibujan semi-transparentes cuando están delante, para que el jugador siempre sea visible.
 
-**Regla:** Solo afecta sprites con depth row >= player depth row. Sprites detrás del player (depth row menor) siempre se dibujan opacos.
-
-**Evaluación por sprite individual:** Cada tile, NPC, pasto o muro se evalúa de forma independiente. En una pared de 10 tiles, solo los 1-2 que realmente intersectan con el Rect del player se hacen transparentes. Los demás quedan opacos.
+**Regla actual:** Chebyshev distance ≤ 1 (las 9 celdas alrededor del player) + depth row mayor o mismo tile → alpha 128. Entidades más lejos o detrás quedan opacas.
 
 **Implementación:**
-1. Al dibujar al player en `draw_entity`, guardar su `Rect` en pantalla y su `depth_row` en una variable accesible por el render loop.
-2. Para todo sprite dibujado después (depth row >= player depth row): `if sprite_rect.has_intersection(player_rect) { texture.set_alpha_mod(128) } else { texture.set_alpha_mod(255) }`.
-3. Aplica a: tiles de muro, NPCs, enemigos, pastos delanteros, y cualquier objeto futuro.
+- `draw_entity` recibe `player_depth` y compara contra `entity_depth_row(entity)`
+- Muros (`draw_wall_cube`) usan `player_rect` pre-calculado para el mismo chequeo
+- Pastos frontales usan `player_rect` con `has_intersection`
 
-**Ubicación en código:** Modificar `draw_entity` y `draw_grass_tufts` en `render/renderer.rs`. Sin tocar `core/`.
+**Limitación conocida (mejora futura):** Para entidades de size=1 tile, el chequeo por depth row + proximidad funciona bien. Se intentó usar intersección de rects (`has_intersection` con rect completo, mitad inferior, tercio inferior) pero los sprites altos (128×256) generaban falsos positivos en las diagonales traseras. Si se agregan entidades de más de 1 tile, revisitar con bounding boxes más ajustados o colisión por píxel.
+
+**Ubicación en código:** `render/renderer.rs` — `draw_entity`, `draw_wall_cube`, `draw_grass_tufts`. Sin tocar `core/`.
 
 ---
 
@@ -229,17 +229,31 @@ Flujo:
 
 ## 5. Pathfinding visualizado (debug view) — `pendiente` — **URGENTE**
 
-Toggle en el debug menu que pinta visualmente el A* corriendo: `open set` en azul semi-transparente, `closed set` en gris, path final en verde, nodo actualmente expandido en amarillo. Se actualiza cada vez que el player o un NPC pide un path. Es 100% debugging pero va a ser invaluable cuando lleguen los enemigos con AI en P6 y necesitemos entender por qué un mob eligió cierta ruta.
+Toggle en el debug menu que pinta visualmente el A* corriendo: `open set` en azul semi-transparente, `closed set` en gris, path final en verde, nodo actualmente expandido en amarillo. Es 100% debugging y **client-local**: en coop (P9) cada jugador ve solo el path de *su* personaje cuando activa su propio debug, no se sincroniza por red. Va a ser invaluable cuando lleguen los enemigos con AI en P6 y necesitemos entender por qué un mob eligió cierta ruta.
 
-**Implementación:** Modificar `core/pathfinding.rs` `find_path()` para que opcionalmente devuelva un `PathDebugInfo { open: Vec<Pos>, closed: Vec<Pos>, path: Vec<Pos> }` además del path final, controlado por una flag en `GameState.debug_pathfinding`. El renderer dibuja el overlay leyendo `GameState.last_path_debug` con `set_blend_mode(Blend)` y rectángulos sobre los tiles. Sin tocar el algoritmo principal — solo capturar estado en un branch `if cfg.debug_paths`.
+**Implementación (respetando Golden Rule — no mete debug en `GameState`):**
+- `core/pathfinding.rs::find_path()` gana una variante `find_path_with_debug(&Tilemap, start, goal, &mut PathDebugInfo) -> Option<Vec<Pos>>` donde `PathDebugInfo` es un struct simple (también en `core/pathfinding.rs`) que el caller provee. La función original `find_path()` queda intacta para gameplay, solo agregamos un wrapper que captura estado.
+- El renderer guarda su propio `PathfindingDebug { enabled: bool, last_path: PathDebugInfo, target_entity_id: u64 }` en una struct render-side (al lado de `AssetManager`/`AudioManager`/`DebugMenu`), **no en `GameState`**.
+- Cuando el debug está activo, el renderer llama `find_path_with_debug()` directamente sobre `gamestate.tilemap` para *su* personaje, captura el resultado en su `PathfindingDebug` local, y lo dibuja como overlay.
+- En coop (P9), cada cliente tiene su propia instancia de `PathfindingDebug` local. El host nunca envía debug por red. Cada jugador ve solo lo suyo.
+- Toggle en el debug menu (TAB → Game Settings → "Show pathfinding debug").
 
 ---
 
 ## 6. Sistema de partículas básico (hit, polvo, magia) — `pendiente` — **P4**
 
-Particle pool con structs simples (`Particle { pos, vel, life, color, size }`) actualizadas en `core/` y dibujadas como rectángulos o sprites pequeños en `render/`. Emisores disparados por `GameEvent` (`EntityHit` → chispas, `EntityMoved` sobre Dirt → polvo, hechizos → estelas), con `Vec<Particle>` de capacidad fija y compactación al final del tick para evitar allocations en hot path. Sienta las bases visuales para combate (P6) y polish general.
+Particle pool con structs simples (`Particle { pos, vel, life, color, size }`) que **vive 100% en `render/`** — las partículas no afectan gameplay (no cambian HP, no bloquean movimiento, no se sincronizan por red), así que no tienen razón de existir en `GameState`. Emisores disparados por `GameEvent` (`EntityHit` → chispas, `EntityMoved` sobre Dirt → polvo, hechizos → estelas). Sienta las bases visuales para combate (P6) y polish general.
 
-**Ubicación:** Nuevo `src/core/particles.rs` (struct + tick) y `src/render/particles.rs` (draw). Sin tocar SDL2 desde core.
+**Importante (separación de ticks):** hay dos ticks distintos en el juego, no confundirlos:
+- **Game tick** (`GameState.tick()` en `core/`): fixed timestep 60 Hz, lógica autoritativa, se sincroniza en P9.
+- **Particle tick** (`ParticleSystem.update(dt)` en `render/`): corre al framerate del cliente, decrementa lifetimes, descarta partículas muertas. Es solo visual.
+
+**Implementación:**
+- Nuevo `src/render/particles.rs` con `ParticleSystem { pool: Vec<Particle> }` (capacidad fija con compactación al final del frame para evitar allocations).
+- `main.rs` guarda el `ParticleSystem` al lado del `AudioManager` y `AssetManager`.
+- Después de `state.tick()`, el game loop itera el `Vec<GameEvent>` que devolvió el tick y por cada `EntityHit/EntityMoved/SpellCast/...` llama `particles.emit(...)` con la posición y tipo del emisor.
+- Cada frame antes de renderizar: `particles.update(dt)`, después `particles.draw(&mut canvas)`.
+- Core nunca sabe que existen partículas. En P9, las partículas son puramente locales del cliente — el host no las simula ni las envía.
 
 ---
 
@@ -303,4 +317,20 @@ Cuando el mouse está sobre una entidad, aparece un tooltip pequeño con su nomb
 
 Quicksave con `F5` que serializa el `GameState` completo a `assets/saves/quick.json` (player pos, todas las entidades con sus estados, FOV explorada, diálogos vistos, time_of_day, etc.). Quickload con `F9` lo restaura. Sienta las bases del save/load completo de P7 sin esperarlo, y elimina la fricción de re-iniciar el juego cada vez que querés probar algo concreto.
 
-**Ubicación:** Agregar `#[derive(Serialize, Deserialize)]` a todos los structs de `core/`. Funciones `GameState::quicksave(path)` y `GameState::quickload(path) -> Result<Self>`. Tecla F5/F9 manejada en `main.rs` directamente sin pasar por `GameInput`.
+**Modelo de save en coop (P9):** la partida guardada vive **en el host**. Si el host hace quicksave y se desconecta, todos los clientes se desconectan también — la partida no puede continuar sin él. Cuando un cliente se reconecta, recibe el `GameState` actual del host (los mismos bytes que se guardarían a disco, pero por socket en vez de a archivo). Mismo struct, mismos bytes, distinto transport.
+
+**Implementación (respetando Golden Rule — separar "qué se serializa" de "a dónde van los bytes"):**
+- `core/` agrega solo `#[derive(Serialize, Deserialize)]` a todos los structs (`GameState`, `Entity`, `Tilemap`, `FovMap`, etc.). **Nada más en core** — ningún método de I/O.
+- `main.rs` (que es el "host" en solo player y será el host del coop en P9) hace el `fs::write`:
+  ```rust
+  fn quicksave(state: &GameState) -> io::Result<()> {
+      let json = serde_json::to_string(state)?;
+      fs::write("assets/saves/quick.json", json)
+  }
+  fn quickload() -> io::Result<GameState> {
+      let json = fs::read_to_string("assets/saves/quick.json")?;
+      Ok(serde_json::from_str(&json)?)
+  }
+  ```
+- Tecla F5/F9 manejada en `main.rs` directamente sin pasar por `GameInput` (es una operación de cliente, no un input de juego).
+- En P9, el mismo `serde` derive sirve para mandar el state por TCP con `bincode::serialize()`. Core no crece métodos por cada destino nuevo (`save_to_file`, `send_to_socket`, `compute_hash`, etc.) — el transport vive afuera siempre.

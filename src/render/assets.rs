@@ -14,6 +14,10 @@ use crate::render::iso::{TILE_HEIGHT, TILE_WIDTH};
 pub struct AssetManager<'a> {
     texture_creator: &'a TextureCreator<WindowContext>,
     textures: HashMap<String, Texture<'a>>,
+    /// Pre-computed outline points for sprites, keyed by "{asset_key}_{frame_index}".
+    /// Generated once when the scene loads (not at startup for all assets).
+    /// Each entry is a Vec of (x, y) pixel coordinates relative to the sprite's top-left.
+    outlines: HashMap<String, Vec<(i32, i32)>>,
 }
 
 impl<'a> AssetManager<'a> {
@@ -21,6 +25,7 @@ impl<'a> AssetManager<'a> {
         AssetManager {
             texture_creator,
             textures: HashMap::new(),
+            outlines: HashMap::new(),
         }
     }
 
@@ -56,6 +61,65 @@ impl<'a> AssetManager<'a> {
     /// Get a mutable texture by key (needed to set color mod for FOV darkening).
     pub fn get_mut(&mut self, key: &str) -> Option<&mut Texture<'a>> {
         self.textures.get_mut(key)
+    }
+
+    /// Get pre-computed outline points for a sprite frame.
+    /// Key format: "{asset_key}_{frame_index}" (e.g., "npc_african_black_3").
+    pub fn get_outline(&self, key: &str) -> Option<&Vec<(i32, i32)>> {
+        self.outlines.get(key)
+    }
+
+    /// Generate outline points for a spritesheet's frames.
+    /// Reads pixel data from the PNG on disk (not from GPU texture),
+    /// detects edge pixels (opaque with at least one transparent neighbor),
+    /// and stores them for fast rendering later.
+    ///
+    /// Called once per scene load, not at startup for all assets.
+    /// Only generates outlines for assets actually present in the scene.
+    pub fn generate_outlines_for_spritesheet(
+        &mut self,
+        asset_key: &str,
+        path: &str,
+        frame_w: u32,
+        frame_h: u32,
+        frame_count: u32,
+    ) {
+        let img = match image::open(path) {
+            Ok(i) => i.to_rgba8(),
+            Err(_) => return,
+        };
+
+        for frame in 0..frame_count {
+            let mut points = Vec::new();
+            let fx = frame * frame_w;
+
+            for py in 0..frame_h {
+                for px in 0..frame_w {
+                    let pixel = img.get_pixel(fx + px, py);
+                    if pixel[3] >= 128 {
+                        continue; // opaque pixel, skip — we want transparent pixels outside the sprite
+                    }
+
+                    // Check if any 4-connected neighbor is opaque → this transparent pixel is just outside the edge
+                    let is_outer_edge = [(0i32, -1i32), (0, 1), (-1, 0), (1, 0)].iter().any(|&(dx, dy)| {
+                        let nx = (fx + px) as i32 + dx;
+                        let ny = py as i32 + dy;
+                        if nx < fx as i32 || nx >= (fx + frame_w) as i32 || ny < 0 || ny >= frame_h as i32 {
+                            return false;
+                        }
+                        let neighbor = img.get_pixel(nx as u32, ny as u32);
+                        neighbor[3] >= 128
+                    });
+
+                    if is_outer_edge {
+                        points.push((px as i32, py as i32));
+                    }
+                }
+            }
+
+            let key = format!("{asset_key}_{frame}");
+            self.outlines.insert(key, points);
+        }
     }
 
     /// Load real assets where available, generate placeholders for the rest.
@@ -123,6 +187,11 @@ impl<'a> AssetManager<'a> {
             if self.load_image(&key, &path).is_err() {
                 self.create_entity_texture(&key, Color::RGB(60, 60, 200))?;
             }
+            // Pre-compute outline points for this NPC spritesheet (8 frames of 128x256).
+            // Done once at scene load — not every frame.
+            self.generate_outlines_for_spritesheet(
+                &key, &path, 128, 256, 8,
+            );
         }
         // Legacy single NPC sprite as fallback
         if self.load_image("entity_npc", "assets/sprites/npc/entity_npc.png").is_err() {
@@ -130,9 +199,13 @@ impl<'a> AssetManager<'a> {
         }
 
         // --- Enemy sprites ---
-        if self.load_image("entity_enemy", "assets/sprites/enemy/entity_enemy.png").is_err() {
+        let enemy_path = "assets/sprites/enemy/entity_enemy.png";
+        if self.load_image("entity_enemy", enemy_path).is_err() {
             self.create_entity_texture("entity_enemy", Color::RGB(200, 60, 200))?;
         }
+        self.generate_outlines_for_spritesheet(
+            "entity_enemy", enemy_path, 128, 256, 8,
+        );
 
         // --- Decoration sprites ---
         for i in 1..=8 {
