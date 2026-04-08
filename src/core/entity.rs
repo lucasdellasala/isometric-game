@@ -1,15 +1,9 @@
 use rand::Rng;
 
+use crate::config;
 use crate::render::iso::grid_to_screen;
 use crate::core::pathfinding::{self, Pos};
 use crate::core::tilemap::Tilemap;
-
-const LERP_SPEED: f64 = 0.2;
-const PATH_STEP_TICKS: u32 = 8;
-const WALK_ANIM_FRAMES: u32 = 8;     // total frames in walk cycle
-const TICKS_PER_ANIM_FRAME: u32 = 4; // ticks before advancing to next frame
-const IDLE_ROTATE_MIN_TICKS: u32 = 180; // 3 seconds at 60 ticks/sec
-const IDLE_ROTATE_MAX_TICKS: u32 = 480; // 8 seconds
 
 /// NPC visual variant — determines which spritesheet to use.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -134,7 +128,7 @@ impl Entity {
             anim_moving: false,
             npc_variant: if kind == EntityKind::Npc { Some(NpcVariant::random()) } else { None },
             idle_rotate_timer: if kind == EntityKind::Npc {
-                rand::thread_rng().gen_range(IDLE_ROTATE_MIN_TICKS..=IDLE_ROTATE_MAX_TICKS)
+                rand::thread_rng().gen_range(config::IDLE_ROTATE_MIN_TICKS..=config::IDLE_ROTATE_MAX_TICKS)
             } else { 0 },
             path: vec![],
             path_index: 0,
@@ -144,7 +138,7 @@ impl Entity {
     }
 
     /// Try to move one tile in a direction. Cancels any active path.
-    pub fn try_move(&mut self, dx: i32, dy: i32, tilemap: &Tilemap) {
+    pub fn try_move(&mut self, dx: i32, dy: i32, tilemap: &Tilemap, blocked: &std::collections::HashSet<(i32, i32)>) {
         self.clear_path();
 
         // Always update facing, even if movement is blocked (like in Fallout)
@@ -157,7 +151,7 @@ impl Entity {
             return;
         }
 
-        if !tilemap.get(new_x, new_y).is_walkable() {
+        if !tilemap.get(new_x, new_y).is_walkable() || blocked.contains(&(new_x, new_y)) {
             return;
         }
 
@@ -167,16 +161,16 @@ impl Entity {
 
     /// Set a pathfinding target. Calculates A* and starts walking.
     /// Returns true if a path was found.
-    pub fn move_to(&mut self, target_x: i32, target_y: i32, tilemap: &Tilemap) -> bool {
+    pub fn move_to(&mut self, target_x: i32, target_y: i32, tilemap: &Tilemap, blocked: &std::collections::HashSet<(i32, i32)>) -> bool {
         let start = Pos { x: self.grid_x, y: self.grid_y };
         let goal = Pos { x: target_x, y: target_y };
 
-        match pathfinding::find_path(start, goal, tilemap) {
+        match pathfinding::find_path(start, goal, tilemap, blocked) {
             Some(path) => {
                 self.path = path;
                 self.path_index = 0;
                 if self.path_timer == 0 {
-                    self.path_timer = PATH_STEP_TICKS;
+                    self.path_timer = config::PATH_STEP_TICKS;
                 }
                 true
             }
@@ -199,7 +193,7 @@ impl Entity {
     /// Current walk animation frame index (0..7), or None if idle.
     pub fn walk_frame(&self) -> Option<u32> {
         if self.anim_moving {
-            Some((self.anim_tick / TICKS_PER_ANIM_FRAME) % WALK_ANIM_FRAMES)
+            Some((self.anim_tick / config::TICKS_PER_ANIM_FRAME) % config::WALK_ANIM_FRAMES)
         } else {
             None
         }
@@ -219,7 +213,7 @@ impl Entity {
                 self.grid_x = next.x;
                 self.grid_y = next.y;
                 self.path_index += 1;
-                self.path_timer = PATH_STEP_TICKS;
+                self.path_timer = config::PATH_STEP_TICKS;
             }
         }
 
@@ -228,8 +222,8 @@ impl Entity {
         let tx = target_x as f64;
         let ty = target_y as f64;
 
-        self.visual_x += (tx - self.visual_x) * LERP_SPEED;
-        self.visual_y += (ty - self.visual_y) * LERP_SPEED;
+        self.visual_x += (tx - self.visual_x) * config::LERP_SPEED;
+        self.visual_y += (ty - self.visual_y) * config::LERP_SPEED;
 
         if (tx - self.visual_x).abs() < 0.5 {
             self.visual_x = tx;
@@ -261,7 +255,7 @@ impl Entity {
             } else {
                 let mut rng = rand::thread_rng();
                 self.facing = (rng.gen_range(0..8u16) * 45) as u16;
-                self.idle_rotate_timer = rng.gen_range(IDLE_ROTATE_MIN_TICKS..=IDLE_ROTATE_MAX_TICKS);
+                self.idle_rotate_timer = rng.gen_range(config::IDLE_ROTATE_MIN_TICKS..=config::IDLE_ROTATE_MAX_TICKS);
             }
         }
     }

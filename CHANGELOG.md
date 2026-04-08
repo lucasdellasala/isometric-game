@@ -7,6 +7,11 @@ Registro de cambios del RPG isometrico multijugador estilo D&D, construido desde
 ## [Unreleased] — En desarrollo
 
 ### Agregado
+- **`config.rs` centralizado:** Todas las constantes de configuración (colores, tamaños, velocidades, umbrales) viven en `src/config.rs`. Ningún valor visual o de gameplay se hardcodea inline
+- **Highlight de interacción con NPCs:** Contorno con la forma del sprite (no rectángulo) en verde para NPCs amigables y rojo para enemigos. Se muestra al pasar el mouse o al estar adyacente. Prompt `[E] Hablar` cuando se puede interactuar
+- **Transparencia de oclusión:** Sprites (NPCs, muros, pastos) que tapan al player se dibujan semi-transparentes. Evaluación individual por sprite con chequeo de depth row
+- **Pasto decorativo:** 8 sprites de hierba distribuidos pseudo-aleatoriamente sobre tiles Grass con oclusión parcial (detrás/delante del player)
+- **Posiciones bloqueadas:** `GameState.blocked: HashSet<(i32,i32)>` para objetos que bloquean movimiento y pathfinding
 - **Spritesheets de NPCs con variantes:** 9 variantes visuales (african, caucasian, latino x black/brown/cream) con spritesheets de 1024x256 (8 direcciones por hoja)
 - **Rotacion idle de NPCs:** los NPCs cambian de direccion aleatoriamente cada 3-8 segundos cuando estan quietos
 - **NPCs miran al jugador al interactuar:** `face_toward()` orienta al NPC hacia el jugador al presionar E

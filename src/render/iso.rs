@@ -1,7 +1,7 @@
 // Isometric projection math: convert between grid coords and screen coords
 
-pub const TILE_WIDTH: i32 = 128;
-pub const TILE_HEIGHT: i32 = 64;
+// Re-export tile dimensions from config so existing `use crate::render::iso::TILE_WIDTH` still works.
+pub use crate::config::{TILE_WIDTH, TILE_HEIGHT};
 
 /// Convert grid coordinates (col, row) to screen pixel coordinates (x, y).
 /// Returns the top-center point of the diamond tile.

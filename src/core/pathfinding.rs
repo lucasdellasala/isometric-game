@@ -44,14 +44,14 @@ const DIRECTIONS: [(i32, i32); 4] = [(0, -1), (0, 1), (-1, 0), (1, 0)];
 /// Find the shortest path from `start` to `goal` using A*.
 /// Returns the path as a Vec of positions (excluding `start`, including `goal`),
 /// or None if no path exists.
-pub fn find_path(start: Pos, goal: Pos, tilemap: &Tilemap) -> Option<Vec<Pos>> {
+pub fn find_path(start: Pos, goal: Pos, tilemap: &Tilemap, blocked: &std::collections::HashSet<(i32, i32)>) -> Option<Vec<Pos>> {
     // If start == goal, no path needed
     if start == goal {
         return Some(vec![]);
     }
 
-    // If goal is not walkable, no path exists
-    if !tilemap.get(goal.x, goal.y).is_walkable() {
+    // If goal is not walkable or blocked by an object, no path exists
+    if !tilemap.get(goal.x, goal.y).is_walkable() || blocked.contains(&(goal.x, goal.y)) {
         return None;
     }
 
@@ -99,8 +99,8 @@ pub fn find_path(start: Pos, goal: Pos, tilemap: &Tilemap) -> Option<Vec<Pos>> {
                 continue;
             }
 
-            // Check if walkable
-            if !tilemap.get(neighbor.x, neighbor.y).is_walkable() {
+            // Check if walkable and not blocked by objects
+            if !tilemap.get(neighbor.x, neighbor.y).is_walkable() || blocked.contains(&(neighbor.x, neighbor.y)) {
                 continue;
             }
 

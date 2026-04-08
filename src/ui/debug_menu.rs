@@ -3,6 +3,7 @@ use sdl2::rect::Rect;
 use sdl2::render::Canvas;
 use sdl2::video::Window;
 
+use crate::config;
 use crate::render::post_process::{ApplyScope, PostProcessMode};
 use crate::render::text::TextRenderer;
 
@@ -72,8 +73,8 @@ impl DebugMenu {
 
             water_variant: 17,
 
-            fov_radius: 18,
-            camera_zoom: 1.6,
+            fov_radius: config::DEFAULT_FOV_RADIUS,
+            camera_zoom: config::DEFAULT_CAMERA_ZOOM,
         }
     }
 

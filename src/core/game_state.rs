@@ -1,13 +1,10 @@
+use std::collections::HashSet;
+
 use crate::core::entity::{Entity, EntityKind};
 use crate::core::fov::FovMap;
 use crate::core::input::{GameEvent, GameInput};
+use crate::config;
 use crate::core::tilemap::Tilemap;
-
-const MOVE_COOLDOWN: u32 = 6;
-
-/// Default FOV radius in tiles. Configurable per-entity in the future
-/// (e.g., elves see further than humans).
-const DEFAULT_FOV_RADIUS: i32 = 18;
 
 /// Active dialogue state — which entity is talking and what they say.
 pub struct ActiveDialogue {
@@ -28,6 +25,8 @@ pub struct GameState {
     /// FOV radius in tiles. Determines how far the player can see.
     /// Will be per-entity in the future (e.g., elf > human).
     pub fov_radius: i32,
+    /// Grid positions blocked by objects (walls, props). Entities can't walk here.
+    pub blocked: HashSet<(i32, i32)>,
     next_entity_id: u64,
 }
 
@@ -42,9 +41,13 @@ impl GameState {
             click_target: None,
             local_player_id: 0,
             active_dialogue: None,
-            fov_radius: DEFAULT_FOV_RADIUS,
+            fov_radius: config::DEFAULT_FOV_RADIUS,
+            blocked: HashSet::new(),
             next_entity_id: 0,
         };
+
+        // Block the test wall cube position
+        state.blocked.insert((1, 0));
 
         // Spawn the player at the center of the map
         let center_x = state.tilemap.cols / 2;
@@ -106,9 +109,10 @@ impl GameState {
                 if can_move {
                     // Need to borrow tilemap separately from entity
                     let tilemap = &self.tilemap;
+                    let blocked = &self.blocked;
                     if let Some(entity) = self.entities.iter_mut().find(|e| e.id == entity_id) {
-                        entity.try_move(dx, dy, tilemap);
-                        entity.move_timer = MOVE_COOLDOWN;
+                        entity.try_move(dx, dy, tilemap, blocked);
+                        entity.move_timer = config::MOVE_COOLDOWN;
                         events.push(GameEvent::EntityMoved {
                             entity_id,
                             grid_x: entity.grid_x,
@@ -119,8 +123,9 @@ impl GameState {
             }
             GameInput::MoveTo { entity_id, target_x, target_y } => {
                 let tilemap = &self.tilemap;
+                let blocked = &self.blocked;
                 if let Some(entity) = self.entities.iter_mut().find(|e| e.id == entity_id) {
-                    let found = entity.move_to(target_x, target_y, tilemap);
+                    let found = entity.move_to(target_x, target_y, tilemap, blocked);
                     if found {
                         self.click_target = Some((target_x, target_y));
                     } else {

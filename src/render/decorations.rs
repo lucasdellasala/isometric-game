@@ -73,6 +73,7 @@ pub fn draw_grass_tufts(
     brightness: f64,
     zoom: f64,
     filter: Option<bool>,
+    player_rect: Option<Rect>,
 ) {
     let b = (brightness * 255.0) as u8;
 
@@ -100,8 +101,18 @@ pub fn draw_grass_tufts(
                 h,
             );
 
+            // Semi-transparent if overlapping with the player
+            if let Some(pr) = player_rect {
+                if dst.has_intersection(pr) {
+                    texture.set_alpha_mod(128);
+                } else {
+                    texture.set_alpha_mod(255);
+                }
+            }
+
             texture.set_color_mod(b, b, b);
             let _ = canvas.copy(texture, None, dst);
+            texture.set_alpha_mod(255); // reset
         }
     }
 }

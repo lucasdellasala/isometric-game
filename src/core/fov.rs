@@ -1,7 +1,5 @@
+use crate::config;
 use crate::core::tilemap::Tilemap;
-
-// Brightness level for explored-but-not-visible tiles
-const EXPLORED_BRIGHTNESS: f64 = 0.35;
 
 /// Fog of war map: tracks visibility with distance-based falloff.
 pub struct FovMap {
@@ -82,7 +80,7 @@ impl FovMap {
             self.visible[i] = false;
             // Set explored tiles to their dim brightness, hidden to 0
             self.brightness[i] = if self.explored[i] {
-                EXPLORED_BRIGHTNESS
+                config::EXPLORED_BRIGHTNESS
             } else {
                 0.0
             };

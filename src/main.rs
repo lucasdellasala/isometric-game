@@ -1,3 +1,4 @@
+mod config;
 mod core;
 mod render;
 mod ui;
@@ -68,8 +69,8 @@ fn main() {
     let mut fps_timer = Instant::now();
     let mut frame_count: u32 = 0;
     let mut debug_menu = DebugMenu::new(
-        render::renderer::ENTITY_OFFSET_X,
-        render::renderer::ENTITY_OFFSET_Y,
+        config::ENTITY_OFFSET_X,
+        config::ENTITY_OFFSET_Y,
     );
 
     // --- Game Loop ---

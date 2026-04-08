@@ -21,6 +21,7 @@ Multiplayer co-op D&D-style RPG with isometric graphics. Built from scratch in R
 - Prefer explicit code over idiomatic until both forms are known
 - When code doesn't compile, help read the error before giving the solution
 - If using a concept not yet learned, stop and explain first
+- **Never hardcode visual/gameplay values inline.** Any numeric value that controls appearance or behavior (colors, sizes, speeds, thresholds, offsets) must be a named `const` at the top of the file or module. Examples: `const OUTLINE_THICKNESS: i32 = 4;`, `const NPC_HIGHLIGHT_COLOR: Color = Color::RGB(100, 255, 100);`. This makes tuning easy without searching through logic code.
 
 ---
 
@@ -40,6 +41,7 @@ GameInput → GameState.apply_input() → GameState.tick() → Vec<GameEvent>
 ```
 src/
   main.rs                    — SDL2 init, game loop, input dispatch
+  config.rs                  — ALL tunable constants (colors, sizes, speeds, thresholds)
   core/                      — Pure game logic (no SDL2)
     mod.rs
     input.rs                 — GameInput, GameEvent enums
@@ -50,7 +52,7 @@ src/
     game_state.rs            — GameState, ActiveDialogue, entity spawning
   render/                    — All rendering (SDL2-dependent)
     mod.rs
-    iso.rs                   — Isometric projection (128×64 tiles)
+    iso.rs                   — Isometric projection (re-exports TILE_WIDTH/HEIGHT from config)
     camera.rs                — Camera viewport offset
     assets.rs                — AssetManager (textures, spritesheets)
     text.rs                  — TextRenderer (rusttype, pure Rust)
@@ -99,14 +101,18 @@ assets_dev/                            — Development files (NOT committed)
 ```
 
 ### Constants
-- Tile size: 128×64 pixels (TILE_WIDTH, TILE_HEIGHT in iso.rs)
-- Fixed timestep: 60 ticks/sec (TICK_DURATION in main.rs)
-- Move cooldown: 6 ticks for WASD, 8 ticks between path steps
-- FOV radius: 18 tiles (configurable)
-- Explored brightness: 0.35, falloff starts at 60% of radius
-- Walk animation: 8 frames, 4 ticks per frame (~15 FPS)
-- Entity scale: 0.66 relative to camera zoom
-- Window: starts maximized, resizable
+All tunable values live in `src/config.rs`. Categories:
+- **Tile & Projection:** TILE_WIDTH, TILE_HEIGHT
+- **Camera:** DEFAULT_CAMERA_ZOOM
+- **Entity Rendering:** ENTITY_OFFSET_X/Y, ENTITY_SCALE
+- **Entity Behavior:** LERP_SPEED, PATH_STEP_TICKS, WALK_ANIM_FRAMES, TICKS_PER_ANIM_FRAME, IDLE_ROTATE_MIN/MAX_TICKS, MOVE_COOLDOWN
+- **FOV & Visibility:** DEFAULT_FOV_RADIUS, EXPLORED_BRIGHTNESS
+- **Interaction Highlight:** HIGHLIGHT_OUTLINE_PX, HIGHLIGHT_COLOR_NPC/ENEMY, HIGHLIGHT_ALPHA_ADJACENT/HOVER, HIGHLIGHT_PROMPT_*
+- **Hover & Markers:** HOVER_COLOR, MARKER_COLOR, MARKER_SIZE_BASE
+- **Dialogue Box:** DIALOGUE_BOX_HEIGHT/MARGIN/PADDING, DIALOGUE_BG/BORDER/NAME/TEXT/HINT colors and font sizes
+- **Frustum Culling:** CULL_MARGIN
+- **Wall Cube:** WALL_LEFT/RIGHT_BRIGHTNESS, WALL_LEFT/RIGHT_COLOR
+- Window: starts maximized, resizable. Fixed timestep: 60 ticks/sec (TICK_DURATION in main.rs)
 
 ---
 
