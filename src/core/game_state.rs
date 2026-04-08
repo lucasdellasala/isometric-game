@@ -4,7 +4,10 @@ use crate::core::input::{GameEvent, GameInput};
 use crate::core::tilemap::Tilemap;
 
 const MOVE_COOLDOWN: u32 = 6;
-const FOV_RADIUS: i32 = 10;
+
+/// Default FOV radius in tiles. Configurable per-entity in the future
+/// (e.g., elves see further than humans).
+const DEFAULT_FOV_RADIUS: i32 = 18;
 
 /// Active dialogue state — which entity is talking and what they say.
 pub struct ActiveDialogue {
@@ -22,6 +25,9 @@ pub struct GameState {
     pub click_target: Option<(i32, i32)>,
     pub local_player_id: u64,
     pub active_dialogue: Option<ActiveDialogue>,
+    /// FOV radius in tiles. Determines how far the player can see.
+    /// Will be per-entity in the future (e.g., elf > human).
+    pub fov_radius: i32,
     next_entity_id: u64,
 }
 
@@ -36,11 +42,14 @@ impl GameState {
             click_target: None,
             local_player_id: 0,
             active_dialogue: None,
+            fov_radius: DEFAULT_FOV_RADIUS,
             next_entity_id: 0,
         };
 
-        // Spawn the player at (0, 0)
-        let player_id = state.spawn_entity(EntityKind::Player, "Player", 0, 0);
+        // Spawn the player at the center of the map
+        let center_x = state.tilemap.cols / 2;
+        let center_y = state.tilemap.rows / 2;
+        let player_id = state.spawn_entity(EntityKind::Player, "Player", center_x, center_y);
         state.local_player_id = player_id;
 
         // Spawn entities defined in the map file
@@ -139,6 +148,12 @@ impl GameState {
                     if let Some(target) = target {
                         let target_id = target.id;
                         let target_name = target.name.clone();
+
+                        // Make NPC face the player
+                        if let Some(npc) = self.entities.iter_mut().find(|e| e.id == target_id) {
+                            npc.face_toward(px, py);
+                        }
+
                         events.push(GameEvent::InteractionStarted {
                             entity_id,
                             target_id,
@@ -179,7 +194,7 @@ impl GameState {
 
         // Recompute FOV from local player position
         if let Some(player) = self.get_entity(self.local_player_id) {
-            self.fov_map.compute(player.grid_x, player.grid_y, FOV_RADIUS, &self.tilemap);
+            self.fov_map.compute(player.grid_x, player.grid_y, self.fov_radius, &self.tilemap);
         }
 
         events

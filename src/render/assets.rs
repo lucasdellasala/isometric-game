@@ -58,115 +58,88 @@ impl<'a> AssetManager<'a> {
         self.textures.get_mut(key)
     }
 
-    /// Ground tile style subfolder. Change this to switch between visual styles.
-    /// Available: "gradient", "flat"
-    const GROUND_STYLE: &'static str = "gradient";
-
     /// Load real assets where available, generate placeholders for the rest.
     pub fn generate_placeholders(&mut self) -> Result<(), String> {
-        // --- Ground tiles (style selected by GROUND_STYLE) ---
-        let ground = format!("assets/tiles/CelShading/ground/{}", Self::GROUND_STYLE);
+        // --- Ground tiles (pre-extracted 128x64 PNGs) ---
+        // Grass: 3 variants from forest spritesheet
+        for i in 1..=3 {
+            let idx = i + 3; // tiles 04, 05, 06
+            if self.load_image(&format!("tile_grass_{i}"), &format!("assets/tiles/forest/forest_{idx:02}.png")).is_err() {
+                self.create_tile_texture(&format!("tile_grass_{i}"), Color::RGB(80, 150, 80), Color::RGB(60, 120, 60))?;
+            }
+        }
+        // Water: 18 variants
+        for i in 1..=18 {
+            if self.load_image(&format!("tile_water_{i}"), &format!("assets/tiles/water/water_{i:02}.png")).is_err() {
+                self.create_tile_texture(&format!("tile_water_{i}"), Color::RGB(60, 100, 180), Color::RGB(40, 75, 150))?;
+            }
+        }
+        // Dirt: 3 variants from terrain spritesheet
+        for i in 1..=3 {
+            let idx = i + 3; // tiles 04, 05, 06
+            if self.load_image(&format!("tile_dirt_{i}"), &format!("assets/tiles/terrain/terrain_{idx:02}.png")).is_err() {
+                self.create_tile_texture(&format!("tile_dirt_{i}"), Color::RGB(150, 120, 70), Color::RGB(120, 95, 50))?;
+            }
+        }
+        // Stone: same as dirt variants
+        for i in 1..=3 {
+            let idx = i + 3;
+            if self.load_image(&format!("tile_stone_{i}"), &format!("assets/tiles/terrain/terrain_{idx:02}.png")).is_err() {
+                self.create_tile_texture(&format!("tile_stone_{i}"), Color::RGB(160, 160, 160), Color::RGB(140, 140, 140))?;
+            }
+        }
 
-        if self.load_image("tile_grass", &format!("{ground}/tile_grass.png")).is_err() {
-            self.create_tile_texture("tile_grass", Color::RGB(80, 150, 80), Color::RGB(60, 120, 60))?;
-        }
-        if self.load_image("tile_dirt", &format!("{ground}/tile_dirt.png")).is_err() {
-            self.create_tile_texture("tile_dirt", Color::RGB(150, 120, 70), Color::RGB(120, 95, 50))?;
-        }
-        if self.load_image("tile_stone", &format!("{ground}/tile_stone.png")).is_err() {
-            self.create_tile_texture("tile_stone", Color::RGB(160, 160, 160), Color::RGB(140, 140, 140))?;
-        }
-        if self.load_image("tile_water", &format!("{ground}/tile_water.png")).is_err() {
-            self.create_tile_texture("tile_water", Color::RGB(60, 100, 180), Color::RGB(40, 75, 150))?;
-        }
-
-        // Wall sprites (directional faces)
-        let _ = self.load_image("tile_wall_left", "assets/tiles/Ground/wall_stone_left_64x32.png");
-        let _ = self.load_image("tile_wall_right", "assets/tiles/Ground/wall_stone_right_64x32.png");
+        // Wall placeholder (generated, no sprite yet)
         self.create_tile_texture("tile_wall_top", Color::RGB(160, 160, 160), Color::RGB(140, 140, 140))?;
 
-        // --- AssetsV1 tiles ---
-        let v1 = "assets/tiles/AssetsV1";
-
-        // Ground: dirt variants
-        for i in 1..=13 {
-            let _ = self.load_image(&format!("ground_dirt_{i:02}"), &format!("{v1}/dirt{i:02}.png"));
-        }
-        // Ground: grass variants
-        for i in 1..=5 {
-            let _ = self.load_image(&format!("ground_grass_{i:02}"), &format!("{v1}/grass{i:02}.png"));
-        }
-        let _ = self.load_image("ground_grass_flower", &format!("{v1}/grassFlower.png"));
-        let _ = self.load_image("ground_grass_flower_large", &format!("{v1}/grassFlowerLarge.png"));
-        // Ground: stone variants
-        for i in 1..=3 {
-            let _ = self.load_image(&format!("ground_stone_{i:02}"), &format!("{v1}/stoneTile{i:02}.png"));
-        }
-        // Ground: water
-        let _ = self.load_image("ground_water", &format!("{v1}/waterTile.png"));
-
-        // Props: trees
-        let _ = self.load_image("tree_birch", &format!("{v1}/treeBirch.png"));
-        let _ = self.load_image("tree_maple", &format!("{v1}/treeMaple.png"));
-        let _ = self.load_image("tree_oak", &format!("{v1}/treeOak.png"));
-        let _ = self.load_image("tree_pine", &format!("{v1}/treePine.png"));
-        let _ = self.load_image("tree_walnut", &format!("{v1}/treeWalnut.png"));
-
-        // Props: rocks
-        let _ = self.load_image("rock_large", &format!("{v1}/rockLarge.png"));
-        let _ = self.load_image("rock_medium", &format!("{v1}/rockMedium.png"));
-        let _ = self.load_image("rock_small", &format!("{v1}/rockSmall.png"));
-
-        // Props: bushes & flowers
-        let _ = self.load_image("bush_medium", &format!("{v1}/bushMedium.png"));
-        let _ = self.load_image("bush_small", &format!("{v1}/bushSmall.png"));
-        let _ = self.load_image("flower_blue", &format!("{v1}/flowerBlue.png"));
-        let _ = self.load_image("flower_blue_cluster", &format!("{v1}/flowerBlueCluster.png"));
-
-        // Props: containers & misc
-        let _ = self.load_image("barrel", &format!("{v1}/barrel.png"));
-        let _ = self.load_image("bucket", &format!("{v1}/bucket.png"));
-        let _ = self.load_image("hay_bale", &format!("{v1}/hayBale.png"));
-        let _ = self.load_image("hay_bales_stack", &format!("{v1}/hayBalesStack.png"));
-        let _ = self.load_image("log_hollow", &format!("{v1}/logHollow.png"));
-
-        // Props: fences
-        for i in 1..=11 {
-            let _ = self.load_image(&format!("fence_{i:02}"), &format!("{v1}/fence{i:02}.png"));
-        }
-
-        // Props: cliffs
-        let _ = self.load_image("cliff_end", &format!("{v1}/cliffEnd.png"));
-        let _ = self.load_image("cliff_front", &format!("{v1}/cliffFront.png"));
-        let _ = self.load_image("cliff_front_2", &format!("{v1}/cliffFront2.png"));
-        let _ = self.load_image("cliff_left", &format!("{v1}/cliffLeft.png"));
-        let _ = self.load_image("cliff_left_2", &format!("{v1}/cliffLeft2.png"));
-
-        // --- Entity sprites ---
-        let cel = "assets/tiles/CelShading";
-
-        // Player: 8 idle sprites (entity_player_000 through entity_player_315)
+        // --- Player sprites ---
+        // Idle: 8 directional sprites
         for angle in (0..360).step_by(45) {
             let key = format!("entity_player_{angle:03}");
-            let path = format!("{cel}/entity_player_{angle:03}.png");
+            let path = format!("assets/sprites/player/idle/entity_player_{angle:03}.png");
             if self.load_image(&key, &path).is_err() {
                 self.create_entity_texture(&key, Color::RGB(200, 60, 60))?;
             }
         }
 
-        // Player: 8 directions × 8 walk frames (entity_player_walk_000_0 through _315_7)
+        // Walk: 8 directions × 8 frames
         for angle in (0..360).step_by(45) {
             for frame in 0..8 {
                 let key = format!("entity_player_walk_{angle:03}_{frame}");
-                let path = format!("{cel}/walk/entity_player_walk_{angle:03}_{frame}.png");
+                let path = format!("assets/sprites/player/walk/entity_player_walk_{angle:03}_{frame}.png");
                 let _ = self.load_image(&key, &path);
             }
         }
-        if self.load_image("entity_npc", "assets/tiles/CelShading/entity_npc.png").is_err() {
+
+        // --- NPC spritesheets (9 variants, 1024x256 each, 8 directional frames) ---
+        let npc_variants = [
+            "african_black", "african_brown", "african_cream",
+            "caucasian_black", "caucasian_brown", "caucasian_cream",
+            "latino_black", "latino_brown", "latino_cream",
+        ];
+        for variant in &npc_variants {
+            let key = format!("npc_{variant}");
+            let path = format!("assets/sprites/npc/entity_npc_{variant}.png");
+            if self.load_image(&key, &path).is_err() {
+                self.create_entity_texture(&key, Color::RGB(60, 60, 200))?;
+            }
+        }
+        // Legacy single NPC sprite as fallback
+        if self.load_image("entity_npc", "assets/sprites/npc/entity_npc.png").is_err() {
             self.create_entity_texture("entity_npc", Color::RGB(60, 60, 200))?;
         }
-        if self.load_image("entity_enemy", "assets/tiles/CelShading/entity_enemy.png").is_err() {
+
+        // --- Enemy sprites ---
+        if self.load_image("entity_enemy", "assets/sprites/enemy/entity_enemy.png").is_err() {
             self.create_entity_texture("entity_enemy", Color::RGB(200, 60, 200))?;
+        }
+
+        // --- Decoration sprites ---
+        for i in 1..=8 {
+            let _ = self.load_image(
+                &format!("grass_tuft_{i:02}"),
+                &format!("assets/sprites/decorations/grass_tuft_{i:02}.png"),
+            );
         }
 
         Ok(())

@@ -4,17 +4,18 @@ use sdl2::render::Canvas;
 use sdl2::video::Window;
 
 use crate::render::assets::AssetManager;
-use crate::render::camera::{Camera, CAMERA_ZOOM};
+use crate::render::camera::Camera;
 use crate::render::post_process::{self, ApplyScope, DitherParams, MoebiusParams, PostProcessMode};
 use crate::core::entity::{Entity, EntityKind};
-use crate::ui::sprite_debug::SpriteDebug;
+use crate::ui::debug_menu::DebugMenu;
 use crate::core::game_state::GameState;
 use crate::render::iso::{grid_to_screen, TILE_HEIGHT, TILE_WIDTH};
 use crate::render::text::TextRenderer;
-#[allow(unused_imports)]
 use crate::core::tilemap::TileKind;
+use crate::render::decorations::{self, GrassTuft};
 
-const CULL_MARGIN: i32 = TILE_WIDTH;
+/// Extra margin for frustum culling. Scaled by zoom at runtime.
+const CULL_MARGIN: i32 = TILE_WIDTH * 2;
 
 /// Manual offset to adjust entity sprite positioning on the tile.
 /// Tweak these if the sprite has transparent padding that shifts it off-center.
@@ -22,15 +23,15 @@ const CULL_MARGIN: i32 = TILE_WIDTH;
 pub const ENTITY_OFFSET_X: i32 = 2;
 pub const ENTITY_OFFSET_Y: i32 = 30;
 
-/// Scale factor for entity sprites relative to CAMERA_ZOOM.
+/// Scale factor for entity sprites relative to zoom.
 /// 1.0 = full size, 0.66 = two thirds.
 const ENTITY_SCALE: f64 = 0.66;
 
 /// Convert grid position to screen position with camera offset and zoom applied.
-fn to_screen(grid_x: i32, grid_y: i32, cam: &Camera, screen_w: i32, screen_h: i32) -> (i32, i32) {
+fn to_screen(grid_x: i32, grid_y: i32, cam: &Camera, screen_w: i32, screen_h: i32, zoom: f64) -> (i32, i32) {
     let (sx, sy) = grid_to_screen(grid_x, grid_y);
-    let x = ((sx - cam.x) as f64 * CAMERA_ZOOM) as i32 + screen_w / 2;
-    let y = ((sy - cam.y) as f64 * CAMERA_ZOOM) as i32 + screen_h / 4;
+    let x = ((sx - cam.x) as f64 * zoom) as i32 + screen_w / 2;
+    let y = ((sy - cam.y) as f64 * zoom) as i32 + screen_h / 2;
     (x, y)
 }
 
@@ -43,10 +44,10 @@ fn is_on_screen(cx: i32, cy: i32, screen_w: i32, screen_h: i32) -> bool {
 }
 
 /// Draw a hover highlight (diamond outline) on the tile under the mouse cursor.
-fn draw_hover(canvas: &mut Canvas<Window>, grid_x: i32, grid_y: i32, cam: &Camera, sw: i32, sh: i32) {
-    let (cx, cy) = to_screen(grid_x, grid_y, cam, sw, sh);
-    let hw = (TILE_WIDTH as f64 * CAMERA_ZOOM / 2.0) as i32;
-    let hh = (TILE_HEIGHT as f64 * CAMERA_ZOOM / 2.0) as i32;
+fn draw_hover(canvas: &mut Canvas<Window>, grid_x: i32, grid_y: i32, cam: &Camera, sw: i32, sh: i32, zoom: f64) {
+    let (cx, cy) = to_screen(grid_x, grid_y, cam, sw, sh, zoom);
+    let hw = (TILE_WIDTH as f64 * zoom / 2.0) as i32;
+    let hh = (TILE_HEIGHT as f64 * zoom / 2.0) as i32;
     let mid_y = cy + hh;
 
     canvas.set_draw_color(Color::RGBA(255, 255, 255, 120));
@@ -57,10 +58,10 @@ fn draw_hover(canvas: &mut Canvas<Window>, grid_x: i32, grid_y: i32, cam: &Camer
 }
 
 /// Draw a target marker (small yellow diamond) on a tile.
-fn draw_marker(canvas: &mut Canvas<Window>, grid_x: i32, grid_y: i32, cam: &Camera, sw: i32, sh: i32) {
-    let (cx, cy) = to_screen(grid_x, grid_y, cam, sw, sh);
-    let size = (6.0 * CAMERA_ZOOM) as i32;
-    let center_y = cy + (TILE_HEIGHT as f64 * CAMERA_ZOOM) as i32 / 2;
+fn draw_marker(canvas: &mut Canvas<Window>, grid_x: i32, grid_y: i32, cam: &Camera, sw: i32, sh: i32, zoom: f64) {
+    let (cx, cy) = to_screen(grid_x, grid_y, cam, sw, sh, zoom);
+    let size = (6.0 * zoom) as i32;
+    let center_y = cy + (TILE_HEIGHT as f64 * zoom) as i32 / 2;
 
     canvas.set_draw_color(Color::RGB(255, 255, 0));
     for y in 0..size {
@@ -72,32 +73,73 @@ fn draw_marker(canvas: &mut Canvas<Window>, grid_x: i32, grid_y: i32, cam: &Came
     }
 }
 
-/// Get the texture key for a tile kind.
-fn tile_texture_key(kind: TileKind) -> &'static str {
+/// Deterministic noise value for a grid position. Returns 0-99.
+/// Uses multiple hash layers for a more natural distribution.
+fn noise(col: i32, row: i32, seed: u32) -> u32 {
+    let h1 = (col as u32).wrapping_mul(7919).wrapping_add((row as u32).wrapping_mul(6271));
+    let h2 = h1.wrapping_mul(2654435761); // Knuth multiplicative hash
+    let h3 = h2.wrapping_add(seed).wrapping_mul(1103515245).wrapping_add(12345);
+    (h3 >> 16) % 100
+}
+
+/// Get the texture key for a tile kind, with weighted random variant per position.
+/// Grass: 60% variant 2, 30% variant 1, 10% variant 3
+/// Dirt:  60% variant 2, 30% variant 1, 10% variant 3
+/// Water: uses water_variant parameter (1-18)
+fn tile_texture_key(kind: TileKind, col: i32, row: i32, water_variant: u32) -> String {
     match kind {
-        TileKind::Grass => "tile_grass",
-        TileKind::Dirt => "tile_dirt",
-        TileKind::Stone => "tile_stone",
-        TileKind::Water => "tile_water",
+        TileKind::Grass => {
+            let n = noise(col, row, 0);
+            let variant = if n < 60 { 2 } else if n < 90 { 1 } else { 3 };
+            format!("tile_grass_{variant}")
+        }
+        TileKind::Dirt => {
+            let n = noise(col, row, 42);
+            let variant = if n < 60 { 2 } else if n < 90 { 1 } else { 3 };
+            format!("tile_dirt_{variant}")
+        }
+        TileKind::Stone => {
+            let n = noise(col, row, 99);
+            let variant = if n < 60 { 2 } else if n < 90 { 1 } else { 3 };
+            format!("tile_stone_{variant}")
+        }
+        TileKind::Water => {
+            format!("tile_water_{water_variant}")
+        }
     }
 }
 
-/// Get the texture key for an entity, considering facing and walk animation.
-fn entity_texture_key(entity: &Entity) -> String {
+use crate::core::entity::facing_to_npc_frame;
+
+/// Get the texture key and optional src_rect for an entity.
+/// For NPCs with variant spritesheets, returns the sheet key + src_rect for the direction frame.
+/// For player/enemy, returns the individual sprite key + None.
+fn entity_texture_info(entity: &Entity) -> (String, Option<Rect>) {
     match entity.kind {
         EntityKind::Player => {
-            if let Some(frame) = entity.walk_frame() {
+            let key = if let Some(frame) = entity.walk_frame() {
                 format!("entity_player_walk_{:03}_{}", entity.facing, frame)
             } else {
                 format!("entity_player_{:03}", entity.facing)
+            };
+            (key, None)
+        }
+        EntityKind::Npc => {
+            if let Some(variant) = entity.npc_variant {
+                let key = String::from(variant.asset_key());
+                let frame = facing_to_npc_frame(entity.facing);
+                let src = Rect::new((frame * 128) as i32, 0, 128, 256);
+                (key, Some(src))
+            } else {
+                (String::from("entity_npc"), None)
             }
         }
-        EntityKind::Npc => String::from("entity_npc"),
-        EntityKind::Enemy => String::from("entity_enemy"),
+        EntityKind::Enemy => (String::from("entity_enemy"), None),
     }
 }
 
 /// Draw a tile texture at a screen position, darkened by FOV brightness, scaled by zoom.
+/// Always draws at TILE_WIDTH × TILE_HEIGHT regardless of the sprite's actual pixel size.
 fn draw_tile(
     canvas: &mut Canvas<Window>,
     assets: &mut AssetManager,
@@ -106,19 +148,18 @@ fn draw_tile(
     cy: i32,
     brightness: f64,
     zoom: f64,
+    tile_offset: (i32, i32),
 ) {
     if let Some(texture) = assets.get_mut(key) {
-        let query = texture.query();
-        let w = (query.width as f64 * zoom) as u32;
-        let h = (query.height as f64 * zoom) as u32;
+        let w = (TILE_WIDTH as f64 * zoom) as u32;
+        let h = (TILE_HEIGHT as f64 * zoom) as u32;
         let dst = Rect::new(
-            cx - w as i32 / 2,
-            cy,
+            cx - w as i32 / 2 + tile_offset.0,
+            cy + tile_offset.1,
             w,
             h,
         );
 
-        // Darken texture using color mod (only affects non-transparent pixels)
         let b = (brightness * 255.0) as u8;
         texture.set_color_mod(b, b, b);
         let _ = canvas.copy(texture, None, dst);
@@ -134,7 +175,8 @@ fn draw_entity(
     cam: &Camera,
     sw: i32,
     sh: i32,
-    sprite_debug: &SpriteDebug,
+    zoom: f64,
+    debug_menu: &DebugMenu,
     text: &mut TextRenderer,
 ) {
     // Don't draw entities in unexplored or dark areas
@@ -143,26 +185,33 @@ fn draw_entity(
         return;
     }
 
-    let cx = ((entity.visual_x as i32 - cam.x) as f64 * CAMERA_ZOOM) as i32 + sw / 2;
-    let cy = ((entity.visual_y as i32 - cam.y) as f64 * CAMERA_ZOOM) as i32 + sh / 4;
+    let cx = ((entity.visual_x as i32 - cam.x) as f64 * zoom) as i32 + sw / 2;
+    let cy = ((entity.visual_y as i32 - cam.y) as f64 * zoom) as i32 + sh / 2;
 
-    let key = entity_texture_key(entity);
+    let (key, src_rect) = entity_texture_info(entity);
 
     if let Some(texture) = assets.get_mut(&key) {
-        let query = texture.query();
-        let entity_zoom = CAMERA_ZOOM * ENTITY_SCALE;
-        let w = (query.width as f64 * entity_zoom) as u32;
-        let h = (query.height as f64 * entity_zoom) as u32;
-        let th = (TILE_HEIGHT as f64 * CAMERA_ZOOM) as i32;
+        let entity_zoom = zoom * ENTITY_SCALE;
+        let th = (TILE_HEIGHT as f64 * zoom) as i32;
 
-        // Player always uses sprite_debug offsets (persisted between debug sessions).
-        // Other entities use the constants.
+        // For spritesheet NPCs, use the frame dimensions (128x256), not the full sheet
+        let (src_w, src_h) = match src_rect {
+            Some(r) => (r.width(), r.height()),
+            None => {
+                let q = texture.query();
+                (q.width, q.height)
+            }
+        };
+        let w = (src_w as f64 * entity_zoom) as u32;
+        let h = (src_h as f64 * entity_zoom) as u32;
+
+        // Player uses debug_menu offsets, others use constants
         let (off_x, off_y) = if entity.kind == EntityKind::Player {
-            let (dx, dy) = sprite_debug.get_offset(entity.facing);
-            ((dx as f64 * CAMERA_ZOOM) as i32, (dy as f64 * CAMERA_ZOOM) as i32)
+            let (dx, dy) = debug_menu.get_sprite_offset(entity.facing);
+            ((dx as f64 * zoom) as i32, (dy as f64 * zoom) as i32)
         } else {
-            let ox = (ENTITY_OFFSET_X as f64 * CAMERA_ZOOM) as i32;
-            let oy = (ENTITY_OFFSET_Y as f64 * CAMERA_ZOOM) as i32;
+            let ox = (ENTITY_OFFSET_X as f64 * zoom) as i32;
+            let oy = (ENTITY_OFFSET_Y as f64 * zoom) as i32;
             (ox, oy)
         };
 
@@ -172,11 +221,11 @@ fn draw_entity(
             w,
             h,
         );
-        let _ = canvas.copy(texture, None, dst);
+        let _ = canvas.copy(texture, src_rect, dst);
 
         // Show sprite key label above player when debug is active
-        if sprite_debug.active && entity.kind == EntityKind::Player {
-            let (raw_x, raw_y) = sprite_debug.get_offset(entity.facing);
+        if debug_menu.visible && entity.kind == EntityKind::Player {
+            let (raw_x, raw_y) = debug_menu.get_sprite_offset(entity.facing);
             let label = format!("{} | offset({},{})", key, raw_x, raw_y);
             if let Some(tex) = text.render(&label, 14, Color::RGB(255, 255, 0)) {
                 let q = tex.query();
@@ -190,7 +239,7 @@ fn draw_entity(
             }
 
             // Show mode indicator
-            let mode_label = if sprite_debug.per_direction_mode {
+            let mode_label = if debug_menu.sprite_per_dir {
                 format!("[TAB] Mode: per-direction ({:03})", entity.facing)
             } else {
                 "[TAB] Mode: base offset".to_string()
@@ -219,10 +268,11 @@ fn draw_wall_cube(
     cy: i32,
     height_tiles: i32,
     brightness: f64,
+    zoom: f64,
 ) {
-    let hw = (TILE_WIDTH as f64 * CAMERA_ZOOM / 2.0) as i32;
-    let hh = (TILE_HEIGHT as f64 * CAMERA_ZOOM / 2.0) as i32;
-    let cube_h = (TILE_HEIGHT as f64 * CAMERA_ZOOM * height_tiles as f64) as i32;
+    let hw = (TILE_WIDTH as f64 * zoom / 2.0) as i32;
+    let hh = (TILE_HEIGHT as f64 * zoom / 2.0) as i32;
+    let cube_h = (TILE_HEIGHT as f64 * zoom * height_tiles as f64) as i32;
 
     let top_y = cy - cube_h;
     let top_center = top_y + hh;
@@ -250,7 +300,7 @@ fn draw_wall_cube(
     }
 
     // Top face: stone tile texture
-    draw_tile(canvas, assets, "tile_stone", cx, top_y, brightness, CAMERA_ZOOM);
+    draw_tile(canvas, assets, "tile_stone_1", cx, top_y, brightness, zoom, (0, 0));
 }
 
 /// Compute the isometric depth row for an entity.
@@ -268,7 +318,7 @@ fn entity_depth_row(entity: &Entity) -> i32 {
 
 /// Draw only the tilemap (ground tiles). No entities.
 /// Call this first, then optionally apply dithering, then call draw_entities.
-pub fn draw_tiles(canvas: &mut Canvas<Window>, state: &GameState, cam: &Camera, assets: &mut AssetManager) {
+pub fn draw_tiles(canvas: &mut Canvas<Window>, state: &GameState, cam: &Camera, assets: &mut AssetManager, tile_offset: (i32, i32), water_variant: u32, zoom: f64) {
     let (sw, sh) = canvas.output_size().unwrap_or((1280, 900));
     let sw = sw as i32;
     let sh = sh as i32;
@@ -283,7 +333,7 @@ pub fn draw_tiles(canvas: &mut Canvas<Window>, state: &GameState, cam: &Camera, 
 
         for col in col_min..=col_max {
             let row = depth - col;
-            let (cx, cy) = to_screen(col, row, cam, sw, sh);
+            let (cx, cy) = to_screen(col, row, cam, sw, sh, zoom);
 
             if !is_on_screen(cx, cy, sw, sh) {
                 continue;
@@ -295,12 +345,18 @@ pub fn draw_tiles(canvas: &mut Canvas<Window>, state: &GameState, cam: &Camera, 
             }
 
             let tile = state.tilemap.get(col, row);
-            let key = tile_texture_key(tile);
-            draw_tile(canvas, assets, key, cx, cy, dim, CAMERA_ZOOM);
+            let key = tile_texture_key(tile, col, row, water_variant);
+            draw_tile(canvas, assets, &key, cx, cy, dim, zoom, tile_offset);
 
             // Test wall cube at grid position (1, 0), 2 tiles tall
             if col == 1 && row == 0 {
-                draw_wall_cube(canvas, assets, cx, cy, 2, dim);
+                draw_wall_cube(canvas, assets, cx, cy, 2, dim, zoom);
+            }
+
+            // Draw back grass tufts (behind entities, part of tile layer)
+            if tile == TileKind::Grass {
+                let tufts = decorations::generate_grass_tufts(col, row);
+                decorations::draw_grass_tufts(canvas, assets, &tufts, cx, cy, dim, zoom, Some(true));
             }
         }
     }
@@ -314,7 +370,8 @@ pub fn draw_entities_and_ui(
     cam: &Camera,
     assets: &mut AssetManager,
     text: &mut TextRenderer,
-    sprite_debug: &SpriteDebug,
+    zoom: f64,
+    debug_menu: &DebugMenu,
     hover_tile: Option<(i32, i32)>,
 ) {
     let (sw, sh) = canvas.output_size().unwrap_or((1280, 900));
@@ -331,19 +388,58 @@ pub fn draw_entities_and_ui(
         .collect();
     entity_draw_order.sort_by_key(|(depth, _)| *depth);
 
-    for &(_, entity_idx) in &entity_draw_order {
-        draw_entity(canvas, assets, &state.entities[entity_idx], &state.fov_map, cam, sw, sh, sprite_debug, text);
+    let mut entity_cursor = 0;
+    let max_depth = state.tilemap.cols + state.tilemap.rows - 2;
+
+    for depth in 0..=max_depth {
+        // Draw entities for this depth row
+        while entity_cursor < entity_draw_order.len() {
+            let (entity_depth, entity_idx) = entity_draw_order[entity_cursor];
+            if entity_depth > depth {
+                break;
+            }
+            draw_entity(canvas, assets, &state.entities[entity_idx], &state.fov_map, cam, sw, sh, zoom, debug_menu, text);
+            entity_cursor += 1;
+        }
+
+        // Draw front grass tufts for tiles in this depth row (in front of entities)
+        let col_min = (depth - state.tilemap.rows + 1).max(0);
+        let col_max = depth.min(state.tilemap.cols - 1);
+        for col in col_min..=col_max {
+            let row = depth - col;
+            let tile = state.tilemap.get(col, row);
+            if tile != TileKind::Grass {
+                continue;
+            }
+            let dim = state.fov_map.get_brightness(col, row);
+            if dim < 0.01 {
+                continue;
+            }
+            let (cx, cy) = to_screen(col, row, cam, sw, sh, zoom);
+            if !is_on_screen(cx, cy, sw, sh) {
+                continue;
+            }
+            let tufts = decorations::generate_grass_tufts(col, row);
+            decorations::draw_grass_tufts(canvas, assets, &tufts, cx, cy, dim, zoom, Some(false));
+        }
+    }
+
+    // Draw remaining entities
+    while entity_cursor < entity_draw_order.len() {
+        let (_, entity_idx) = entity_draw_order[entity_cursor];
+        draw_entity(canvas, assets, &state.entities[entity_idx], &state.fov_map, cam, sw, sh, zoom, debug_menu, text);
+        entity_cursor += 1;
     }
 
     // Draw hover highlight on tile under mouse
     if let Some((hx, hy)) = hover_tile {
-        draw_hover(canvas, hx, hy, cam, sw, sh);
+        draw_hover(canvas, hx, hy, cam, sw, sh, zoom);
     }
 
     // Draw click target marker
     if let Some((tx, ty)) = state.click_target {
         if state.fov_map.get_brightness(tx, ty) > 0.5 {
-            draw_marker(canvas, tx, ty, cam, sw, sh);
+            draw_marker(canvas, tx, ty, cam, sw, sh, zoom);
         }
     }
 
@@ -417,25 +513,28 @@ pub fn render_frame(
     scope: ApplyScope,
     dither_params: Option<&DitherParams>,
     moebius_params: Option<&MoebiusParams>,
-    sprite_debug: &SpriteDebug,
+    debug_menu: &DebugMenu,
     hover_tile: Option<(i32, i32)>,
+    tile_offset: (i32, i32),
+    water_variant: u32,
 ) {
+    let zoom = debug_menu.camera_zoom;
     match mode {
         PostProcessMode::Off => {
-            draw_tiles(canvas, state, cam, assets);
-            draw_entities_and_ui(canvas, state, cam, assets, text, sprite_debug, hover_tile);
+            draw_tiles(canvas, state, cam, assets, tile_offset, water_variant, zoom);
+            draw_entities_and_ui(canvas, state, cam, assets, text, zoom, debug_menu, hover_tile);
         }
         PostProcessMode::Dithering => {
             if let Some(params) = dither_params {
                 match scope {
                     ApplyScope::TilesOnly => {
-                        draw_tiles(canvas, state, cam, assets);
+                        draw_tiles(canvas, state, cam, assets, tile_offset, water_variant, zoom);
                         post_process::apply_dither(canvas, params);
-                        draw_entities_and_ui(canvas, state, cam, assets, text, sprite_debug, hover_tile);
+                        draw_entities_and_ui(canvas, state, cam, assets, text, zoom, debug_menu, hover_tile);
                     }
                     ApplyScope::FullScreen => {
-                        draw_tiles(canvas, state, cam, assets);
-                        draw_entities_and_ui(canvas, state, cam, assets, text, sprite_debug, hover_tile);
+                        draw_tiles(canvas, state, cam, assets, tile_offset, water_variant, zoom);
+                        draw_entities_and_ui(canvas, state, cam, assets, text, zoom, debug_menu, hover_tile);
                         post_process::apply_dither(canvas, params);
                     }
                 }
@@ -445,13 +544,13 @@ pub fn render_frame(
             if let Some(params) = moebius_params {
                 match scope {
                     ApplyScope::TilesOnly => {
-                        draw_tiles(canvas, state, cam, assets);
+                        draw_tiles(canvas, state, cam, assets, tile_offset, water_variant, zoom);
                         post_process::apply_moebius(canvas, params);
-                        draw_entities_and_ui(canvas, state, cam, assets, text, sprite_debug, hover_tile);
+                        draw_entities_and_ui(canvas, state, cam, assets, text, zoom, debug_menu, hover_tile);
                     }
                     ApplyScope::FullScreen => {
-                        draw_tiles(canvas, state, cam, assets);
-                        draw_entities_and_ui(canvas, state, cam, assets, text, sprite_debug, hover_tile);
+                        draw_tiles(canvas, state, cam, assets, tile_offset, water_variant, zoom);
+                        draw_entities_and_ui(canvas, state, cam, assets, text, zoom, debug_menu, hover_tile);
                         post_process::apply_moebius(canvas, params);
                     }
                 }

@@ -1,3 +1,5 @@
+use rand::Rng;
+
 use crate::render::iso::grid_to_screen;
 use crate::core::pathfinding::{self, Pos};
 use crate::core::tilemap::Tilemap;
@@ -6,6 +8,58 @@ const LERP_SPEED: f64 = 0.2;
 const PATH_STEP_TICKS: u32 = 8;
 const WALK_ANIM_FRAMES: u32 = 8;     // total frames in walk cycle
 const TICKS_PER_ANIM_FRAME: u32 = 4; // ticks before advancing to next frame
+const IDLE_ROTATE_MIN_TICKS: u32 = 180; // 3 seconds at 60 ticks/sec
+const IDLE_ROTATE_MAX_TICKS: u32 = 480; // 8 seconds
+
+/// NPC visual variant — determines which spritesheet to use.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum NpcVariant {
+    AfricanBlack,
+    AfricanBrown,
+    AfricanCream,
+    CaucasianBlack,
+    CaucasianBrown,
+    CaucasianCream,
+    LatinoBlack,
+    LatinoBrown,
+    LatinoCream,
+}
+
+impl NpcVariant {
+    /// Asset key suffix for this variant.
+    pub fn asset_key(&self) -> &'static str {
+        match self {
+            NpcVariant::AfricanBlack => "npc_african_black",
+            NpcVariant::AfricanBrown => "npc_african_brown",
+            NpcVariant::AfricanCream => "npc_african_cream",
+            NpcVariant::CaucasianBlack => "npc_caucasian_black",
+            NpcVariant::CaucasianBrown => "npc_caucasian_brown",
+            NpcVariant::CaucasianCream => "npc_caucasian_cream",
+            NpcVariant::LatinoBlack => "npc_latino_black",
+            NpcVariant::LatinoBrown => "npc_latino_brown",
+            NpcVariant::LatinoCream => "npc_latino_cream",
+        }
+    }
+
+    /// Pick a random variant.
+    pub fn random() -> NpcVariant {
+        let variants = [
+            NpcVariant::AfricanBlack, NpcVariant::AfricanBrown, NpcVariant::AfricanCream,
+            NpcVariant::CaucasianBlack, NpcVariant::CaucasianBrown, NpcVariant::CaucasianCream,
+            NpcVariant::LatinoBlack, NpcVariant::LatinoBrown, NpcVariant::LatinoCream,
+        ];
+        let idx = rand::thread_rng().gen_range(0..variants.len());
+        variants[idx]
+    }
+}
+
+/// Direction index for NPC spritesheet frames (0-7).
+/// Maps to the 8 columns in the 1024x256 spritesheet.
+pub fn facing_to_npc_frame(facing: u16) -> u32 {
+    // Spritesheet frame order: S, SO, O, NO, N, NE, E, SE (indices 0-7)
+    // Our facing: 0=S, 45=SO, 90=O, 135=NO, 180=N, 225=NE, 270=E, 315=SE
+    (facing / 45) as u32
+}
 
 /// Map grid movement (dx, dy) to the sprite angle that looks correct in isometric view.
 /// In iso projection, grid axes are rotated 45° from screen axes:
@@ -53,6 +107,9 @@ pub struct Entity {
     // Walk animation state
     pub anim_tick: u32,       // ticks since animation started
     pub anim_moving: bool,    // true while visually in motion (lerp not finished)
+    // NPC-specific state
+    pub npc_variant: Option<NpcVariant>,  // which spritesheet to use (None for non-NPCs)
+    idle_rotate_timer: u32,               // ticks until next random facing change
     // Pathfinding state
     path: Vec<Pos>,
     path_index: usize,
@@ -75,6 +132,10 @@ impl Entity {
             facing: 0,
             anim_tick: 0,
             anim_moving: false,
+            npc_variant: if kind == EntityKind::Npc { Some(NpcVariant::random()) } else { None },
+            idle_rotate_timer: if kind == EntityKind::Npc {
+                rand::thread_rng().gen_range(IDLE_ROTATE_MIN_TICKS..=IDLE_ROTATE_MAX_TICKS)
+            } else { 0 },
             path: vec![],
             path_index: 0,
             path_timer: 0,
@@ -191,6 +252,26 @@ impl Entity {
         // Tick down move cooldown
         if self.move_timer > 0 {
             self.move_timer -= 1;
+        }
+
+        // NPC idle rotation: randomly change facing every few seconds
+        if self.kind == EntityKind::Npc {
+            if self.idle_rotate_timer > 0 {
+                self.idle_rotate_timer -= 1;
+            } else {
+                let mut rng = rand::thread_rng();
+                self.facing = (rng.gen_range(0..8u16) * 45) as u16;
+                self.idle_rotate_timer = rng.gen_range(IDLE_ROTATE_MIN_TICKS..=IDLE_ROTATE_MAX_TICKS);
+            }
+        }
+    }
+
+    /// Make this entity face toward a grid position (used for NPC interaction).
+    pub fn face_toward(&mut self, target_x: i32, target_y: i32) {
+        let dx = (target_x - self.grid_x).signum();
+        let dy = (target_y - self.grid_y).signum();
+        if dx != 0 || dy != 0 {
+            self.facing = grid_dir_to_facing(dx, dy);
         }
     }
 }

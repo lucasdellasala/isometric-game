@@ -1,16 +1,14 @@
 /target
 /build
 
-# Blender source files (heavy, not needed at runtime)
+# Development assets (Blender source files, 3D models, WIP renders)
+/assets_dev/
+
+# Binary source files (should never be in git)
 *.blend
 *.blend1
-
-# 3D model files
 *.fbx
 
 # Build artifacts
 *.rar
 *.gif
-
-# Blender mesh bundles
-assets/human-base-meshes-bundle-v1.4.1/

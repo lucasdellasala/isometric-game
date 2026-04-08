@@ -1,2 +1,1 @@
-pub mod config_menu;
-pub mod sprite_debug;
+pub mod debug_menu;
