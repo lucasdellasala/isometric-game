@@ -69,14 +69,17 @@ src/
 - **Camera zoom:** Configurable via debug menu (default 1.6), applied at render time
 - **FOV radius:** Configurable via GameState.fov_radius (default 18)
 - **Depth sorting:** By isometric depth row (col + row). Entity depth uses max(grid_depth, visual_depth_ceil) to avoid flickering during movement
-- **Scancode for movement:** WASD only (no arrow keys — reserved for debug menu)
+- **8-directional movement:** WASD for 4 grid-cardinal directions + combos (W+D, D+S, S+A, A+W) for diagonals. Arrow keys reserved for debug menu
+- **Direction system:** `Direction` enum with 8 screen-cardinals (N, NE, E, SE, S, SW, W, NW). Used for facing, sprite selection, and pathfinding
+- **Pathfinding:** A* with 8 directions (cardinal cost 10, diagonal cost 14 ≈ √2×10), octile distance heuristic
 - **Text rendering:** rusttype crate (pure Rust), not SDL2_ttf (avoids native lib bundling)
 - **SDL2_image not used:** image crate (pure Rust) decodes PNGs → SDL2 surfaces → textures
 - **Spritesheet tiles:** Extracted from spritesheets to individual 128×64 PNGs with diamond transparency mask. AssetManager loads them as regular textures
-- **NPC spritesheets:** 1024×256 PNGs with 8 directional frames (128×256 each). Renderer uses src_rect to select frame
+- **All entity sprites are individual PNGs:** Player, NPCs, and enemies all use one PNG per direction (128×256). No spritesheets at render time — no src_rect. NPC naming: `entity_npc_{variant}_{DIR}.png`. Enemy: `entity_enemy_{DIR}.png`
 - **Grass decorations:** Generated per-tile with deterministic LCG PRNG. Back tufts drawn with tiles (dithered), front tufts drawn after entities (occlude player feet)
-- **Entity outlines:** Pre-computed at load time by scanning sprite PNGs for edge pixels (transparent with opaque neighbor). Stored as `Vec<(i32,i32)>` per frame. Drawn with `canvas.fill_rect()` for uniform color regardless of sprite content
+- **Entity outlines:** Pre-computed at load time by `generate_outline_for_image()` — scans each PNG for outer edge pixels (transparent with opaque neighbor). Stored as `Vec<(i32,i32)>` per direction. Drawn with `canvas.fill_rect()` for uniform color
 - **Occlusion transparency:** Entities within Chebyshev distance ≤ 1 from player with higher depth row → alpha 128. Depth-row based, not pixel intersection (see IDEAS.md #2 for rationale)
+- **NPC interaction:** Chebyshev distance ≤ 1 for interaction range (8 directions + same tile). Outline highlight + `[E] Hablar` prompt
 
 ### Assets structure
 ```
@@ -85,11 +88,13 @@ assets/
   maps/map.json                        — 64×64 test map with entities, walls
   sprites/
     player/
-      idle/entity_player_000..315.png  — 8 directional idle sprites (128×256)
+      idle/entity_player_S..SE.png     — 8 directional idle sprites (128×256)
       walk/entity_player_walk_*        — 8 dirs × 8 frames = 64 walk sprites
     npc/
-      entity_npc_*.png                 — 9 variant spritesheets (1024×256, 8 frames each)
-    enemy/entity_enemy.png             — Enemy placeholder
+      entity_npc_*.png                 — 7 variant spritesheets (1024×256, 8 frames each)
+    enemy/
+      entity_enemy.png                 — Default enemy spritesheet (1024×256)
+      entity_npc_orc.png               — Orc enemy spritesheet (1024×256)
     decorations/grass_tuft_01..08.png  — Grass tufts (16×24)
   tiles/
     forest/forest_01..18.png           — Forest ground tiles (128×64)
@@ -98,9 +103,65 @@ assets/
 
 assets_dev/                            — Development files (NOT committed)
   tiles_spritesheet/                   — Source spritesheets
-  CelShading_old/                      — Old cel-shading assets
   (Blender files, FBX, mesh bundles)
 ```
+
+### Asset specifications
+
+All character sprites (player, NPC, enemy) share the same camera and format:
+
+**Camera setup:**
+- Orthographic isometric projection
+- Camera rotation: X=60°, Z=45° (fixed, never changes)
+- The character rotates on Z axis; the camera stays still
+
+**Player idle sprites:**
+- Size: 128×256 px, RGBA with transparent background
+- 8 individual PNGs, one per facing direction
+- Naming: `entity_player_{cardinal}.png` where cardinal = S, SW, W, NW, N, NE, E, SE
+- `_S` = character facing the camera (front visible, screen down)
+- `_N` = character facing away from camera (back visible, screen up)
+- `_W` = character facing screen-left
+- `_E` = character facing screen-right
+- `_SW` = screen down-left, `_SE` = screen down-right, `_NW` = screen up-left, `_NE` = screen up-right
+- Location: `assets/sprites/player/idle/`
+
+**Player walk sprites:**
+- Same size and camera as idle (128×256 px RGBA)
+- 8 directions × 8 frames = 64 PNGs
+- Naming: `entity_player_walk_{cardinal}_{frame}.png` where cardinal = S, SW, W, NW, N, NE, E, SE and frame = 0..7
+- Example: `entity_player_walk_S_0.png` ... `entity_player_walk_S_7.png`, `entity_player_walk_SW_0.png` ... etc.
+- One full walk cycle per direction
+- Location: `assets/sprites/player/walk/`
+
+**NPC sprites (individual PNGs per direction, same as player):**
+- Size: 128×256 px, RGBA with transparent background
+- 8 PNGs per variant, one per direction
+- Naming: `entity_npc_{ethnicity}_{clothes}_{hair}_{DIR}.png`
+  - Ethnicity: african, caucasian, latino
+  - Colors: bk=black, bn=brown, cr=cream, gn=green, yl=yellow
+  - DIR: S, SW, W, NW, N, NE, E, SE
+  - Example: `entity_npc_african_cr_bk_S.png`, `entity_npc_african_cr_bk_NE.png`
+- Location: `assets/sprites/npc/`
+
+**Enemy sprites (individual PNGs per direction, same as player):**
+- Size: 128×256 px, RGBA with transparent background
+- 8 PNGs per variant
+- Naming: `entity_enemy_{DIR}.png`, `entity_npc_orc_{DIR}.png`
+- Location: `assets/sprites/enemy/`
+
+**Ground tiles:**
+- Size: 128×64 px, RGBA with transparent background
+- Diamond (rhombus) shape, pixels outside the diamond are transparent
+- Ratio: exactly 2:1 (width = 2× height)
+- Naming: `{type}_{number:02}.png` (e.g., `forest_04.png`, `water_17.png`)
+- Location: `assets/tiles/{type}/` (forest, water, terrain)
+
+**Grass decorations:**
+- Size: 16×24 px, RGBA with transparent background
+- 3-5 procedural grass blades per sprite, anchored at bottom-center
+- 8 variants: `grass_tuft_01.png` to `grass_tuft_08.png`
+- Location: `assets/sprites/decorations/`
 
 ### Constants
 All tunable values live in `src/config.rs`. Categories:

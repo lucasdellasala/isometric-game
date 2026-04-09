@@ -49,6 +49,7 @@ pub struct DebugMenu {
     // --- Game settings ---
     pub fov_radius: i32,
     pub camera_zoom: f64,
+    pub show_pathfinding: bool,
 }
 
 impl DebugMenu {
@@ -75,6 +76,7 @@ impl DebugMenu {
 
             fov_radius: config::DEFAULT_FOV_RADIUS,
             camera_zoom: config::DEFAULT_CAMERA_ZOOM,
+            show_pathfinding: false,
         }
     }
 
@@ -87,8 +89,8 @@ impl DebugMenu {
     }
 
     /// Get sprite offset for a facing direction.
-    pub fn get_sprite_offset(&self, facing: u16) -> (i32, i32) {
-        let dir_idx = (facing / 45) as usize;
+    pub fn get_sprite_offset(&self, facing: crate::core::entity::Direction) -> (i32, i32) {
+        let dir_idx = facing.spritesheet_frame() as usize;
         let (dx, dy) = if dir_idx < 8 { self.sprite_per_dir_offsets[dir_idx] } else { (0, 0) };
         (self.sprite_base_x + dx, self.sprite_base_y + dy)
     }
@@ -153,6 +155,7 @@ impl DebugMenu {
             ActiveSubmenu::GameSettings => vec![
                 format!("FOV radius:       {}", self.fov_radius),
                 format!("Camera zoom:      {:.1}", self.camera_zoom),
+                format!("Show pathfinding: {}", if self.show_pathfinding { "ON" } else { "OFF" }),
             ],
             ActiveSubmenu::TopLevel => vec![],
         }
@@ -199,7 +202,7 @@ impl DebugMenu {
         }
     }
 
-    pub fn handle_left(&mut self, player_facing: u16) {
+    pub fn handle_left(&mut self, player_facing: crate::core::entity::Direction) {
         match self.submenu {
             ActiveSubmenu::PostProcess => match self.selected {
                 0 => self.pp_mode = self.pp_mode.prev(),
@@ -232,13 +235,14 @@ impl DebugMenu {
             ActiveSubmenu::GameSettings => match self.selected {
                 0 => self.fov_radius = (self.fov_radius - 1).max(5),
                 1 => { self.camera_zoom = ((self.camera_zoom - 0.1) * 10.0).round() / 10.0; if self.camera_zoom < 0.5 { self.camera_zoom = 0.5; } }
+                2 => self.show_pathfinding = !self.show_pathfinding,
                 _ => {}
             },
             _ => {}
         }
     }
 
-    pub fn handle_right(&mut self, player_facing: u16) {
+    pub fn handle_right(&mut self, player_facing: crate::core::entity::Direction) {
         match self.submenu {
             ActiveSubmenu::PostProcess => match self.selected {
                 0 => self.pp_mode = self.pp_mode.next(),
@@ -271,6 +275,7 @@ impl DebugMenu {
             ActiveSubmenu::GameSettings => match self.selected {
                 0 => self.fov_radius = (self.fov_radius + 1).min(40),
                 1 => self.camera_zoom = (self.camera_zoom + 0.1).min(4.0),
+                2 => self.show_pathfinding = !self.show_pathfinding,
                 _ => {}
             },
             _ => {}

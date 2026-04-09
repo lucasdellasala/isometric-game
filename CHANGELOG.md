@@ -12,7 +12,12 @@ Registro de cambios del RPG isometrico multijugador estilo D&D, construido desde
 - **Transparencia de oclusión:** Entidades cercanas al player (Chebyshev ≤ 1) con depth row mayor o mismo tile se dibujan semi-transparentes (alpha 128). Muros y pastos usan intersección de rects con player_rect pre-calculado. Enemies comparten el sistema con NPCs
 - **Pasto decorativo:** 8 sprites de hierba distribuidos pseudo-aleatoriamente sobre tiles Grass con oclusión parcial (detrás/delante del player)
 - **Posiciones bloqueadas:** `GameState.blocked: HashSet<(i32,i32)>` para objetos que bloquean movimiento y pathfinding
-- **Spritesheets de NPCs con variantes:** 9 variantes visuales (african, caucasian, latino x black/brown/cream) con spritesheets de 1024x256 (8 direcciones por hoja)
+- **NPCs y enemies con PNGs individuales por dirección:** 7 variantes de NPC + 2 de enemy, 8 PNGs por variante (uno por dirección cardinal). Misma lógica que el player, sin spritesheets en runtime
+- **Movimiento 8-direccional:** WASD para 4 cardinales + combos (W+D, D+S, S+A, A+W) para diagonales
+- **Pathfinding 8-direccional:** A* con costo cardinal=10, diagonal=14 (≈√2×10) y heurística octile
+- **Direction enum:** Reemplaza `facing: u16` con ángulos por `facing: Direction` con cardinales de pantalla (N, NE, E, SE, S, SW, W, NW)
+- **Pathfinding debug overlay:** Toggle en debug menu (Game Settings → Show pathfinding). Visualiza closed set (azul), path (verde), start (azul) y goal (amarillo)
+- **Globo de diálogo (speech bubble):** Rectángulo redondeado con flecha apuntando al NPC, text wrapping automático, nombre del hablante y hint `[E] Cerrar`
 - **Rotacion idle de NPCs:** los NPCs cambian de direccion aleatoriamente cada 3-8 segundos cuando estan quietos
 - **NPCs miran al jugador al interactuar:** `face_toward()` orienta al NPC hacia el jugador al presionar E
 - **Sistema de decoraciones (grass tufts):** 8 sprites de pasto decorativo con distribucion procedural por tile (0-3 tufts por tile con pesos), separados en capa trasera (detras de entidades) y capa frontal (delante de entidades)
@@ -31,8 +36,8 @@ Registro de cambios del RPG isometrico multijugador estilo D&D, construido desde
 ### Cambiado
 - **Reorganizacion de assets:** los sprites se movieron de `assets/tiles/CelShading/` a una estructura organizada:
   - `assets/sprites/player/idle/` y `assets/sprites/player/walk/` para el jugador
-  - `assets/sprites/npc/` para spritesheets de NPCs
-  - `assets/sprites/enemy/` para enemigos
+  - `assets/sprites/npc/` para PNGs individuales de NPCs (8 por variante)
+  - `assets/sprites/enemy/` para PNGs individuales de enemigos (8 por variante)
   - `assets/sprites/decorations/` para decoraciones
   - `assets/tiles/forest/`, `assets/tiles/water/`, `assets/tiles/terrain/` para tiles de terreno
   - `assets/maps/` para archivos JSON de mapas
@@ -41,7 +46,9 @@ Registro de cambios del RPG isometrico multijugador estilo D&D, construido desde
 - **Spawn del jugador al centro del mapa:** en vez de (0,0), ahora aparece en `(cols/2, rows/2)`
 - **Tile rendering normalizado:** `draw_tile()` siempre dibuja a `TILE_WIDTH x TILE_HEIGHT` independientemente del tamano real del sprite
 - **Frustum culling ampliado:** margen de culling duplicado a `TILE_WIDTH * 2` para evitar pop-in con zoom
-- **Entity rendering con spritesheet src_rect:** `entity_texture_info()` retorna `(key, Option<Rect>)` para soportar recorte de spritesheets de NPCs
+- **Entity rendering unificado:** Todos los tipos de entidades (player, NPC, enemy) usan PNGs individuales por dirección. Sin spritesheets en runtime, sin src_rect
+- **Interacción con NPCs a 8 direcciones:** Chebyshev distance ≤ 1 (antes solo 4 cardinales)
+- **Outlines con `generate_outline_for_image()`:** Reemplaza el esquema frágil de re-keying desde spritesheets. Cada PNG individual genera su outline directamente
 - **FOV radius por defecto aumentado:** de 10 a 18 tiles
 
 ### Eliminado

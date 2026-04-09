@@ -98,7 +98,7 @@ fn main() {
                 }
                 // Debug menu navigation
                 Event::KeyDown { scancode: Some(sc), .. } if debug_menu.visible => {
-                    let facing = state.local_player().map(|p| p.facing).unwrap_or(0);
+                    let facing = state.local_player().map(|p| p.facing).unwrap_or(core::entity::Direction::S);
                     match sc {
                         Scancode::Up => debug_menu.handle_up(),
                         Scancode::Down => debug_menu.handle_down(),
@@ -140,20 +140,24 @@ fn main() {
             }
         }
 
-        // WASD input (held keys) — blocked during dialogue or when menu is open
+        // WASD input (held keys) — supports 8 directions via key combos.
+        // In iso projection: W=NW, D=SE, S=SW, A=NE on screen.
+        // Diagonals: W+D=N, D+S=E, S+A=S, A+W=W on screen.
         let keyboard = event_pump.keyboard_state();
         let (dx, dy) = if state.active_dialogue.is_some() || debug_menu.visible {
             (0, 0)
-        } else if keyboard.is_scancode_pressed(Scancode::W) {
-            (0, -1)
-        } else if keyboard.is_scancode_pressed(Scancode::S) {
-            (0, 1)
-        } else if keyboard.is_scancode_pressed(Scancode::A) {
-            (-1, 0)
-        } else if keyboard.is_scancode_pressed(Scancode::D) {
-            (1, 0)
         } else {
-            (0, 0)
+            let w = keyboard.is_scancode_pressed(Scancode::W);
+            let a = keyboard.is_scancode_pressed(Scancode::A);
+            let s = keyboard.is_scancode_pressed(Scancode::S);
+            let d = keyboard.is_scancode_pressed(Scancode::D);
+            let mut dx = 0;
+            let mut dy = 0;
+            if w { dy -= 1; }
+            if s { dy += 1; }
+            if a { dx -= 1; }
+            if d { dx += 1; }
+            (dx, dy)
         };
 
         // Apply debug menu values to game state

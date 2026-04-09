@@ -122,6 +122,44 @@ impl<'a> AssetManager<'a> {
         }
     }
 
+    /// Generate outline points for a single PNG image (not a spritesheet).
+    /// Stores with the exact key provided — no "_0" suffix.
+    pub fn generate_outline_for_image(&mut self, outline_key: &str, path: &str) {
+        let img = match image::open(path) {
+            Ok(i) => i.to_rgba8(),
+            Err(_) => return,
+        };
+
+        let w = img.width();
+        let h = img.height();
+        let mut points = Vec::new();
+
+        for py in 0..h {
+            for px in 0..w {
+                let pixel = img.get_pixel(px, py);
+                if pixel[3] >= 128 {
+                    continue;
+                }
+
+                let is_outer_edge = [(0i32, -1i32), (0, 1), (-1, 0), (1, 0)].iter().any(|&(dx, dy)| {
+                    let nx = px as i32 + dx;
+                    let ny = py as i32 + dy;
+                    if nx < 0 || nx >= w as i32 || ny < 0 || ny >= h as i32 {
+                        return false;
+                    }
+                    let neighbor = img.get_pixel(nx as u32, ny as u32);
+                    neighbor[3] >= 128
+                });
+
+                if is_outer_edge {
+                    points.push((px as i32, py as i32));
+                }
+            }
+        }
+
+        self.outlines.insert(String::from(outline_key), points);
+    }
+
     /// Load real assets where available, generate placeholders for the rest.
     pub fn generate_placeholders(&mut self) -> Result<(), String> {
         // --- Ground tiles (pre-extracted 128x64 PNGs) ---
@@ -157,55 +195,60 @@ impl<'a> AssetManager<'a> {
         self.create_tile_texture("tile_wall_top", Color::RGB(160, 160, 160), Color::RGB(140, 140, 140))?;
 
         // --- Player sprites ---
-        // Idle: 8 directional sprites
-        for angle in (0..360).step_by(45) {
-            let key = format!("entity_player_{angle:03}");
-            let path = format!("assets/sprites/player/idle/entity_player_{angle:03}.png");
+        // Idle: 8 directional sprites (N, NE, E, SE, S, SW, W, NW)
+        let directions = ["S", "SW", "W", "NW", "N", "NE", "E", "SE"];
+        for dir in &directions {
+            let key = format!("entity_player_{dir}");
+            let path = format!("assets/sprites/player/idle/entity_player_{dir}.png");
             if self.load_image(&key, &path).is_err() {
                 self.create_entity_texture(&key, Color::RGB(200, 60, 60))?;
             }
         }
 
         // Walk: 8 directions × 8 frames
-        for angle in (0..360).step_by(45) {
+        for dir in &directions {
             for frame in 0..8 {
-                let key = format!("entity_player_walk_{angle:03}_{frame}");
-                let path = format!("assets/sprites/player/walk/entity_player_walk_{angle:03}_{frame}.png");
+                let key = format!("entity_player_walk_{dir}_{frame}");
+                let path = format!("assets/sprites/player/walk/entity_player_walk_{dir}_{frame}.png");
                 let _ = self.load_image(&key, &path);
             }
         }
 
-        // --- NPC spritesheets (9 variants, 1024x256 each, 8 directional frames) ---
+        // --- NPC sprites (individual PNGs per direction, organized in subdirectories) ---
+        // Path: assets/sprites/npc/{variant}/entity_npc_{variant}_{DIR}.png
         let npc_variants = [
-            "african_black", "african_brown", "african_cream",
-            "caucasian_black", "caucasian_brown", "caucasian_cream",
-            "latino_black", "latino_brown", "latino_cream",
+            "african_cr_bk", "african_gn_cr",
+            "caucasian_gn_bn", "caucasian_yl_bk",
+            "latino_bk_bn", "latino_yl_bk",
         ];
         for variant in &npc_variants {
-            let key = format!("npc_{variant}");
-            let path = format!("assets/sprites/npc/entity_npc_{variant}.png");
-            if self.load_image(&key, &path).is_err() {
-                self.create_entity_texture(&key, Color::RGB(60, 60, 200))?;
+            for (i, dir) in directions.iter().enumerate() {
+                let key = format!("npc_{variant}_{dir}");
+                let path = format!("assets/sprites/npc/{variant}/entity_npc_{variant}_{dir}.png");
+                if self.load_image(&key, &path).is_err() {
+                    self.create_entity_texture(&key, Color::RGB(60, 60, 200))?;
+                }
+                let outline_key = format!("npc_{variant}_{i}");
+                self.generate_outline_for_image(&outline_key, &path);
             }
-            // Pre-compute outline points for this NPC spritesheet (8 frames of 128x256).
-            // Done once at scene load — not every frame.
-            self.generate_outlines_for_spritesheet(
-                &key, &path, 128, 256, 8,
-            );
         }
-        // Legacy single NPC sprite as fallback
-        if self.load_image("entity_npc", "assets/sprites/npc/entity_npc.png").is_err() {
-            self.create_entity_texture("entity_npc", Color::RGB(60, 60, 200))?;
-        }
+        // Legacy NPC fallback (placeholder)
+        self.create_entity_texture("entity_npc", Color::RGB(60, 60, 200))?;
 
-        // --- Enemy sprites ---
-        let enemy_path = "assets/sprites/enemy/entity_enemy.png";
-        if self.load_image("entity_enemy", enemy_path).is_err() {
-            self.create_entity_texture("entity_enemy", Color::RGB(200, 60, 200))?;
+        // --- Enemy sprites (individual PNGs per direction, organized in subdirectories) ---
+        // Path: assets/sprites/enemy/{type}/entity_{type}_{DIR}.png
+        let enemy_types = [("orc", "entity_orc")];
+        for (enemy_type, file_prefix) in &enemy_types {
+            for (i, dir) in directions.iter().enumerate() {
+                let key = format!("enemy_{enemy_type}_{dir}");
+                let path = format!("assets/sprites/enemy/{enemy_type}/{file_prefix}_{dir}.png");
+                if self.load_image(&key, &path).is_err() {
+                    self.create_entity_texture(&key, Color::RGB(200, 60, 200))?;
+                }
+                let outline_key = format!("enemy_{enemy_type}_{i}");
+                self.generate_outline_for_image(&outline_key, &path);
+            }
         }
-        self.generate_outlines_for_spritesheet(
-            "entity_enemy", enemy_path, 128, 256, 8,
-        );
 
         // --- Decoration sprites ---
         for i in 1..=8 {

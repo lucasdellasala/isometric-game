@@ -33,13 +33,34 @@ impl PartialOrd for Node {
     }
 }
 
-/// Manhattan distance heuristic (good for 4-directional grid movement).
+/// Octile distance heuristic (8-directional with diagonal cost ~1.4).
+/// Uses integer approximation: cardinal=10, diagonal=14.
 fn heuristic(a: Pos, b: Pos) -> i32 {
-    (a.x - b.x).abs() + (a.y - b.y).abs()
+    let dx = (a.x - b.x).abs();
+    let dy = (a.y - b.y).abs();
+    let diag = dx.min(dy);
+    let straight = dx.max(dy) - diag;
+    diag * 14 + straight * 10
 }
 
-/// The 4 cardinal directions: up, down, left, right.
-const DIRECTIONS: [(i32, i32); 4] = [(0, -1), (0, 1), (-1, 0), (1, 0)];
+/// 8 directions: 4 cardinal + 4 diagonal.
+const DIRECTIONS: [(i32, i32); 8] = [
+    (0, -1), (0, 1), (-1, 0), (1, 0),   // cardinal
+    (-1, -1), (1, -1), (-1, 1), (1, 1),  // diagonal
+];
+
+/// Debug info captured during A* execution. Render-side only — never stored in GameState.
+pub struct PathDebugInfo {
+    /// Tiles that were fully explored (popped from open set).
+    pub closed_set: Vec<Pos>,
+    /// Final path from start to goal (same as find_path return value).
+    pub path: Vec<Pos>,
+    /// Start and goal positions.
+    pub start: Pos,
+    pub goal: Pos,
+    /// Whether a path was found.
+    pub found: bool,
+}
 
 /// Find the shortest path from `start` to `goal` using A*.
 /// Returns the path as a Vec of positions (excluding `start`, including `goal`),
@@ -104,7 +125,10 @@ pub fn find_path(start: Pos, goal: Pos, tilemap: &Tilemap, blocked: &std::collec
                 continue;
             }
 
-            let new_g = current_g + 1; // Each step costs 1
+            // Cardinal moves cost 10, diagonal moves cost 14 (~√2 × 10)
+            let is_diagonal = dx.abs() + dy.abs() == 2;
+            let step_cost = if is_diagonal { 14 } else { 10 };
+            let new_g = current_g + step_cost;
             let prev_g = g_scores.get(&neighbor).copied().unwrap_or(i32::MAX);
 
             if new_g < prev_g {
@@ -121,4 +145,97 @@ pub fn find_path(start: Pos, goal: Pos, tilemap: &Tilemap, blocked: &std::collec
 
     // No path found
     None
+}
+
+/// Same as find_path but captures debug info (closed set, path).
+/// Used by the renderer for visualization — not by gameplay code.
+pub fn find_path_with_debug(
+    start: Pos,
+    goal: Pos,
+    tilemap: &Tilemap,
+    blocked: &std::collections::HashSet<(i32, i32)>,
+) -> PathDebugInfo {
+    let mut debug = PathDebugInfo {
+        closed_set: Vec::new(),
+        path: Vec::new(),
+        start,
+        goal,
+        found: false,
+    };
+
+    if start == goal {
+        debug.found = true;
+        return debug;
+    }
+
+    if !tilemap.get(goal.x, goal.y).is_walkable() || blocked.contains(&(goal.x, goal.y)) {
+        return debug;
+    }
+
+    let mut open_set = BinaryHeap::new();
+    let mut came_from: HashMap<Pos, Pos> = HashMap::new();
+    let mut g_scores: HashMap<Pos, i32> = HashMap::new();
+
+    g_scores.insert(start, 0);
+    open_set.push(Node {
+        pos: start,
+        f: heuristic(start, goal),
+        g: 0,
+    });
+
+    while let Some(current) = open_set.pop() {
+        let current_g = g_scores.get(&current.pos).copied().unwrap_or(i32::MAX);
+        if current.g > current_g {
+            continue;
+        }
+
+        debug.closed_set.push(current.pos);
+
+        if current.pos == goal {
+            let mut path = vec![];
+            let mut pos = goal;
+            while pos != start {
+                path.push(pos);
+                pos = came_from[&pos];
+            }
+            path.reverse();
+            debug.path = path;
+            debug.found = true;
+            return debug;
+        }
+
+        for (dx, dy) in &DIRECTIONS {
+            let neighbor = Pos {
+                x: current.pos.x + dx,
+                y: current.pos.y + dy,
+            };
+
+            if neighbor.x < 0 || neighbor.x >= tilemap.cols
+                || neighbor.y < 0 || neighbor.y >= tilemap.rows
+            {
+                continue;
+            }
+
+            if !tilemap.get(neighbor.x, neighbor.y).is_walkable() || blocked.contains(&(neighbor.x, neighbor.y)) {
+                continue;
+            }
+
+            let is_diagonal = dx.abs() + dy.abs() == 2;
+            let step_cost = if is_diagonal { 14 } else { 10 };
+            let new_g = current_g + step_cost;
+            let prev_g = g_scores.get(&neighbor).copied().unwrap_or(i32::MAX);
+
+            if new_g < prev_g {
+                g_scores.insert(neighbor, new_g);
+                came_from.insert(neighbor, current.pos);
+                open_set.push(Node {
+                    pos: neighbor,
+                    f: new_g + heuristic(neighbor, goal),
+                    g: new_g,
+                });
+            }
+        }
+    }
+
+    debug
 }

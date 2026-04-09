@@ -68,7 +68,8 @@
       "Bash(cp -r assets/fonts build/isometric_game/assets/)",
       "Bash(cp assets/map.json build/isometric_game/assets/)",
       "Bash(python -c \"from PIL import Image; im = Image.open\\('assets/sprites/npc/entity_npc_caucasian_brown.png'\\); print\\('size:', im.size, 'mode:', im.mode\\)\")",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "mcp__blender__get_object_info"
     ]
   }
 }

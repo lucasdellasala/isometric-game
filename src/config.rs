@@ -149,6 +149,71 @@ pub const DIALOGUE_TEXT_GAP: i32 = 30;
 pub const DIALOGUE_HINT_BOTTOM_GAP: i32 = 16;
 
 // =============================================================================
+// SPEECH BUBBLE (globo de diálogo above NPC)
+// =============================================================================
+
+/// Speech bubble background color.
+pub const BUBBLE_BG_COLOR: Color = Color::RGBA(20, 15, 10, 230);
+
+/// Speech bubble border color.
+pub const BUBBLE_BORDER_COLOR: Color = Color::RGB(160, 140, 90);
+
+/// Speech bubble text font size.
+pub const BUBBLE_TEXT_FONT_SIZE: u32 = 14;
+
+/// Speech bubble text color.
+pub const BUBBLE_TEXT_COLOR: Color = Color::RGB(230, 225, 210);
+
+/// Speech bubble speaker name font size.
+pub const BUBBLE_NAME_FONT_SIZE: u32 = 13;
+
+/// Speech bubble speaker name color.
+pub const BUBBLE_NAME_COLOR: Color = Color::RGB(255, 220, 100);
+
+/// Speech bubble inner padding in pixels.
+pub const BUBBLE_PADDING: i32 = 10;
+
+/// Speech bubble corner radius in pixels.
+pub const BUBBLE_CORNER_RADIUS: i32 = 8;
+
+/// Speech bubble maximum width in pixels.
+pub const BUBBLE_MAX_WIDTH: i32 = 280;
+
+/// Speech bubble arrow height in pixels.
+pub const BUBBLE_ARROW_HEIGHT: i32 = 10;
+
+/// Speech bubble arrow half-width in pixels.
+pub const BUBBLE_ARROW_HALF_WIDTH: i32 = 8;
+
+/// Gap between speech bubble arrow and entity sprite top.
+pub const BUBBLE_GAP_ABOVE_ENTITY: i32 = 4;
+
+/// Line height multiplier for text wrapping.
+pub const BUBBLE_LINE_HEIGHT: i32 = 18;
+
+/// Hint text in speech bubble.
+pub const BUBBLE_HINT_FONT_SIZE: u32 = 11;
+
+/// Hint text color in speech bubble.
+pub const BUBBLE_HINT_COLOR: Color = Color::RGB(140, 135, 120);
+
+// =============================================================================
+// PATHFINDING DEBUG OVERLAY
+// =============================================================================
+
+/// Color for tiles in the closed set (fully explored).
+pub const PATH_DEBUG_CLOSED_COLOR: Color = Color::RGBA(100, 100, 150, 60);
+
+/// Color for the final path.
+pub const PATH_DEBUG_PATH_COLOR: Color = Color::RGBA(80, 255, 80, 100);
+
+/// Color for the goal tile.
+pub const PATH_DEBUG_GOAL_COLOR: Color = Color::RGBA(255, 255, 0, 120);
+
+/// Color for the start tile.
+pub const PATH_DEBUG_START_COLOR: Color = Color::RGBA(0, 150, 255, 120);
+
+// =============================================================================
 // FRUSTUM CULLING
 // =============================================================================
 

@@ -31,6 +31,25 @@ fn is_on_screen(cx: i32, cy: i32, screen_w: i32, screen_h: i32) -> bool {
         && cy < screen_h + config::CULL_MARGIN + TILE_HEIGHT
 }
 
+/// Draw a filled diamond overlay on a tile position (for debug visualization).
+fn draw_tile_overlay(canvas: &mut Canvas<Window>, cx: i32, cy: i32, zoom: f64, color: Color) {
+    let hw = (TILE_WIDTH as f64 * zoom / 2.0) as i32;
+    let hh = (TILE_HEIGHT as f64 * zoom / 2.0) as i32;
+
+    canvas.set_draw_color(color);
+    for row in 0..hh * 2 {
+        let w = if row < hh {
+            hw * row / hh
+        } else {
+            hw * (hh * 2 - row) / hh
+        };
+        let _ = canvas.draw_line(
+            Point::new(cx - w, cy + row),
+            Point::new(cx + w, cy + row),
+        );
+    }
+}
+
 /// Draw a hover highlight (diamond outline) on the tile under the mouse cursor.
 fn draw_hover(canvas: &mut Canvas<Window>, grid_x: i32, grid_y: i32, cam: &Camera, sw: i32, sh: i32, zoom: f64) {
     let (cx, cy) = to_screen(grid_x, grid_y, cam, sw, sh, zoom);
@@ -97,35 +116,37 @@ fn tile_texture_key(kind: TileKind, col: i32, row: i32, water_variant: u32) -> S
     }
 }
 
-use crate::core::entity::facing_to_npc_frame;
+use crate::core::entity::Direction;
 
 /// Get the texture key and optional src_rect for an entity.
-/// For NPCs with variant spritesheets, returns the sheet key + src_rect for the direction frame.
-/// For player/enemy, returns the individual sprite key + None.
+/// Get the texture key for an entity based on its kind and facing direction.
+/// All entity types now use individual PNGs per direction (no spritesheets).
 fn entity_texture_info(entity: &Entity) -> (String, Option<Rect>) {
+    let dir = entity.facing.sprite_suffix();
     match entity.kind {
         EntityKind::Player => {
             let key = if let Some(frame) = entity.walk_frame() {
-                format!("entity_player_walk_{:03}_{}", entity.facing, frame)
+                format!("entity_player_walk_{}_{}", dir, frame)
             } else {
-                format!("entity_player_{:03}", entity.facing)
+                format!("entity_player_{}", dir)
             };
             (key, None)
         }
         EntityKind::Npc => {
             if let Some(variant) = entity.npc_variant {
-                let key = String::from(variant.asset_key());
-                let frame = facing_to_npc_frame(entity.facing);
-                let src = Rect::new((frame * 128) as i32, 0, 128, 256);
-                (key, Some(src))
+                let key = format!("{}_{}", variant.asset_key(), dir);
+                (key, None)
             } else {
                 (String::from("entity_npc"), None)
             }
         }
         EntityKind::Enemy => {
-            let frame = facing_to_npc_frame(entity.facing);
-            let src = Rect::new((frame * 128) as i32, 0, 128, 256);
-            (String::from("entity_enemy"), Some(src))
+            if let Some(etype) = entity.enemy_type {
+                let key = format!("{}_{}", etype.asset_key(), dir);
+                (key, None)
+            } else {
+                (format!("enemy_orc_{}", dir), None)
+            }
         }
     }
 }
@@ -281,8 +302,19 @@ fn draw_entity(
 
                 // Use pre-computed outline points for uniform color.
                 // The outline key is "{asset_key}_{frame_index}".
-                let frame_idx = src_rect.map(|r| r.x() / 128).unwrap_or(0);
-                let outline_key = format!("{}_{}", key, frame_idx);
+                // Outline key: for NPCs/enemies it's "{base_key}_{direction_index}"
+                let outline_key = match entity.kind {
+                    EntityKind::Npc => {
+                        if let Some(variant) = entity.npc_variant {
+                            format!("{}_{}", variant.asset_key(), entity.facing.spritesheet_frame())
+                        } else { key.clone() }
+                    }
+                    EntityKind::Enemy => {
+                        let etype_key = entity.enemy_type.map(|e| e.asset_key()).unwrap_or("enemy_orc");
+                        format!("{}_{}", etype_key, entity.facing.spritesheet_frame())
+                    }
+                    _ => key.clone(),
+                };
 
                 if let Some(points) = assets.get_outline(&outline_key) {
                     // Scale factor from sprite pixels to screen pixels
@@ -334,7 +366,7 @@ fn draw_entity(
 
             // Show mode indicator
             let mode_label = if debug_menu.sprite_per_dir {
-                format!("[TAB] Mode: per-direction ({:03})", entity.facing)
+                format!("[TAB] Mode: per-direction ({})", entity.facing.sprite_suffix())
             } else {
                 "[TAB] Mode: base offset".to_string()
             };
@@ -601,6 +633,43 @@ pub fn draw_entities_and_ui(
         entity_cursor += 1;
     }
 
+    // Draw pathfinding debug overlay if enabled
+    if debug_menu.show_pathfinding {
+        if let Some(player) = state.local_player() {
+            // Compute debug path from player to click target (or hover tile)
+            let goal = state.click_target
+                .or(hover_tile);
+            if let Some((gx, gy)) = goal {
+                use crate::core::pathfinding::{self as pf, Pos};
+                let start = Pos { x: player.grid_x, y: player.grid_y };
+                let goal_pos = Pos { x: gx, y: gy };
+                let debug_info = pf::find_path_with_debug(start, goal_pos, &state.tilemap, &state.blocked);
+
+                // Draw closed set (explored tiles) as blue overlay
+                for pos in &debug_info.closed_set {
+                    let (tcx, tcy) = to_screen(pos.x, pos.y, cam, sw, sh, zoom);
+                    if is_on_screen(tcx, tcy, sw, sh) {
+                        draw_tile_overlay(canvas, tcx, tcy, zoom, config::PATH_DEBUG_CLOSED_COLOR);
+                    }
+                }
+
+                // Draw final path as green overlay
+                for pos in &debug_info.path {
+                    let (tcx, tcy) = to_screen(pos.x, pos.y, cam, sw, sh, zoom);
+                    if is_on_screen(tcx, tcy, sw, sh) {
+                        draw_tile_overlay(canvas, tcx, tcy, zoom, config::PATH_DEBUG_PATH_COLOR);
+                    }
+                }
+
+                // Draw start and goal
+                let (sx, sy) = to_screen(debug_info.start.x, debug_info.start.y, cam, sw, sh, zoom);
+                draw_tile_overlay(canvas, sx, sy, zoom, config::PATH_DEBUG_START_COLOR);
+                let (gsx, gsy) = to_screen(debug_info.goal.x, debug_info.goal.y, cam, sw, sh, zoom);
+                draw_tile_overlay(canvas, gsx, gsy, zoom, config::PATH_DEBUG_GOAL_COLOR);
+            }
+        }
+    }
+
     // Draw hover highlight on tile under mouse
     if let Some((hx, hy)) = hover_tile {
         draw_hover(canvas, hx, hy, cam, sw, sh, zoom);
@@ -613,61 +682,229 @@ pub fn draw_entities_and_ui(
         }
     }
 
-    // Draw dialogue box if active
+    // Draw speech bubble above NPC if dialogue is active
     if let Some(dialogue) = &state.active_dialogue {
-        draw_dialogue_box(canvas, text, &dialogue.target_name, &dialogue.text, sw, sh);
+        // Find the target NPC's screen position
+        if let Some(target) = state.get_entity(dialogue.target_id) {
+            let tcx = ((target.visual_x as i32 - cam.x) as f64 * zoom) as i32 + sw / 2;
+            let tcy = ((target.visual_y as i32 - cam.y) as f64 * zoom) as i32 + sh / 2;
+            let entity_zoom = zoom * config::ENTITY_SCALE;
+            // Top of entity sprite (approximate)
+            let sprite_top = tcy + (TILE_HEIGHT as f64 * zoom) as i32 / 2 - (256.0 * entity_zoom) as i32;
+
+            draw_speech_bubble(
+                canvas, text,
+                &dialogue.target_name, &dialogue.text,
+                tcx, sprite_top,
+            );
+        }
     }
 }
 
-/// Draw a dialogue box at the bottom of the screen.
-/// Shows the speaker name and their text in a semi-transparent box.
-fn draw_dialogue_box(
+/// Word-wrap a string to fit within max_width pixels at a given font size.
+/// Returns a Vec of lines. Like CSS word-wrap: break-word.
+fn wrap_text(text_renderer: &mut TextRenderer, content: &str, font_size: u32, max_width: i32) -> Vec<String> {
+    let words: Vec<&str> = content.split_whitespace().collect();
+    if words.is_empty() {
+        return vec![String::new()];
+    }
+
+    let mut lines = Vec::new();
+    let mut current_line = String::new();
+
+    for word in &words {
+        let test = if current_line.is_empty() {
+            word.to_string()
+        } else {
+            format!("{current_line} {word}")
+        };
+
+        // Measure width by rendering (cached, so cheap)
+        let fits = text_renderer.render(&test, font_size, Color::RGB(255, 255, 255))
+            .map(|t| t.query().width as i32 <= max_width)
+            .unwrap_or(true);
+
+        if fits {
+            current_line = test;
+        } else {
+            if !current_line.is_empty() {
+                lines.push(current_line);
+            }
+            current_line = word.to_string();
+        }
+    }
+    if !current_line.is_empty() {
+        lines.push(current_line);
+    }
+
+    lines
+}
+
+/// Draw a filled rounded rectangle by scanning rows.
+/// Each row's width is adjusted at the corners using a circle equation.
+fn fill_rounded_rect(canvas: &mut Canvas<Window>, rect: Rect, radius: i32, color: Color) {
+    canvas.set_draw_color(color);
+
+    let x = rect.x();
+    let y = rect.y();
+    let w = rect.width() as i32;
+    let h = rect.height() as i32;
+    let r = radius.min(w / 2).min(h / 2);
+
+    for row in 0..h {
+        // Calculate horizontal inset for rounded corners
+        let inset = if row < r {
+            // Top corners
+            r - ((r * r - (r - row) * (r - row)) as f64).sqrt() as i32
+        } else if row >= h - r {
+            // Bottom corners
+            let dy = row - (h - r);
+            r - ((r * r - dy * dy) as f64).sqrt() as i32
+        } else {
+            0
+        };
+
+        let _ = canvas.draw_line(
+            Point::new(x + inset, y + row),
+            Point::new(x + w - 1 - inset, y + row),
+        );
+    }
+}
+
+/// Draw a rounded rectangle border by tracing the edge pixels.
+fn draw_rounded_rect_border(canvas: &mut Canvas<Window>, rect: Rect, radius: i32, color: Color) {
+    canvas.set_draw_color(color);
+
+    let x = rect.x();
+    let y = rect.y();
+    let w = rect.width() as i32;
+    let h = rect.height() as i32;
+    let r = radius.min(w / 2).min(h / 2);
+
+    for row in 0..h {
+        let inset = if row < r {
+            r - ((r * r - (r - row) * (r - row)) as f64).sqrt() as i32
+        } else if row >= h - r {
+            let dy = row - (h - r);
+            r - ((r * r - dy * dy) as f64).sqrt() as i32
+        } else {
+            0
+        };
+
+        if row == 0 || row == h - 1 || inset > 0 {
+            // Top/bottom edges or corner rows: draw left and right edge pixels
+            let _ = canvas.draw_point(Point::new(x + inset, y + row));
+            let _ = canvas.draw_point(Point::new(x + w - 1 - inset, y + row));
+            // For top and bottom rows, also draw the full horizontal line
+            if row == 0 || row == h - 1 {
+                let _ = canvas.draw_line(
+                    Point::new(x + inset, y + row),
+                    Point::new(x + w - 1 - inset, y + row),
+                );
+            }
+        } else {
+            // Straight sides: just left and right edge
+            let _ = canvas.draw_point(Point::new(x, y + row));
+            let _ = canvas.draw_point(Point::new(x + w - 1, y + row));
+        }
+    }
+}
+
+/// Draw a speech bubble above an NPC with rounded corners and an arrow pointing down.
+fn draw_speech_bubble(
     canvas: &mut Canvas<Window>,
     text: &mut TextRenderer,
     speaker: &str,
     dialogue_text: &str,
-    sw: i32,
-    sh: i32,
+    anchor_x: i32,
+    anchor_y: i32,
 ) {
-    let box_height = config::DIALOGUE_BOX_HEIGHT;
-    let margin = config::DIALOGUE_BOX_MARGIN;
-    let padding = config::DIALOGUE_BOX_PADDING;
+    let padding = config::BUBBLE_PADDING;
+    let max_w = config::BUBBLE_MAX_WIDTH;
+    let radius = config::BUBBLE_CORNER_RADIUS;
+    let arrow_h = config::BUBBLE_ARROW_HEIGHT;
+    let arrow_hw = config::BUBBLE_ARROW_HALF_WIDTH;
+    let line_h = config::BUBBLE_LINE_HEIGHT;
+    let gap = config::BUBBLE_GAP_ABOVE_ENTITY;
 
-    // Semi-transparent dark background
-    canvas.set_draw_color(config::DIALOGUE_BG_COLOR);
-    let box_rect = Rect::new(margin, sh - box_height - margin, (sw - margin * 2) as u32, box_height as u32);
-    let _ = canvas.fill_rect(box_rect);
-
-    // Border
-    canvas.set_draw_color(config::DIALOGUE_BORDER_COLOR);
-    let _ = canvas.draw_rect(box_rect);
-
-    // Speaker name (yellow, larger font)
-    let name_x = margin + padding;
-    let name_y = sh - box_height - margin + padding;
-    if let Some(name_tex) = text.render(speaker, config::DIALOGUE_NAME_FONT_SIZE, config::DIALOGUE_NAME_COLOR) {
-        let q = name_tex.query();
-        let dst = Rect::new(name_x, name_y, q.width, q.height);
-        let _ = canvas.copy(name_tex, None, dst);
-    }
-
-    // Dialogue text (white, smaller font)
-    let text_x = margin + padding;
-    let text_y = name_y + config::DIALOGUE_TEXT_GAP;
-    if let Some(text_tex) = text.render(dialogue_text, config::DIALOGUE_TEXT_FONT_SIZE, config::DIALOGUE_TEXT_COLOR) {
-        let q = text_tex.query();
-        let dst = Rect::new(text_x, text_y, q.width, q.height);
-        let _ = canvas.copy(text_tex, None, dst);
-    }
-
-    // Hint text
+    // Wrap text to fit within bubble
+    let text_max_w = max_w - padding * 2;
+    let lines = wrap_text(text, dialogue_text, config::BUBBLE_TEXT_FONT_SIZE, text_max_w);
     let hint = "[E] Cerrar";
-    let hint_x = margin + padding;
-    let hint_y = sh - margin - padding - config::DIALOGUE_HINT_BOTTOM_GAP;
-    if let Some(hint_tex) = text.render(hint, config::DIALOGUE_HINT_FONT_SIZE, config::DIALOGUE_HINT_COLOR) {
-        let q = hint_tex.query();
-        let dst = Rect::new(hint_x, hint_y, q.width, q.height);
-        let _ = canvas.copy(hint_tex, None, dst);
+
+    // Calculate bubble dimensions
+    let name_h = config::BUBBLE_NAME_FONT_SIZE as i32 + 4;
+    let text_h = lines.len() as i32 * line_h;
+    let hint_h = config::BUBBLE_HINT_FONT_SIZE as i32 + 4;
+    let content_h = name_h + text_h + hint_h + padding; // gap between sections
+    let bubble_h = content_h + padding * 2;
+
+    // Find the widest line to size the bubble
+    let mut bubble_w = 0i32;
+    // Check name width
+    if let Some(tex) = text.render(speaker, config::BUBBLE_NAME_FONT_SIZE, config::BUBBLE_NAME_COLOR) {
+        bubble_w = bubble_w.max(tex.query().width as i32);
+    }
+    // Check each text line
+    for line in &lines {
+        if let Some(tex) = text.render(line, config::BUBBLE_TEXT_FONT_SIZE, config::BUBBLE_TEXT_COLOR) {
+            bubble_w = bubble_w.max(tex.query().width as i32);
+        }
+    }
+    bubble_w = (bubble_w + padding * 2).min(max_w).max(100);
+
+    // Position: centered above the entity, arrow points to anchor
+    let bx = anchor_x - bubble_w / 2;
+    let by = anchor_y - bubble_h - arrow_h - gap;
+
+    let bubble_rect = Rect::new(bx, by, bubble_w as u32, bubble_h as u32);
+
+    // Draw filled rounded rectangle
+    canvas.set_blend_mode(sdl2::render::BlendMode::Blend);
+    fill_rounded_rect(canvas, bubble_rect, radius, config::BUBBLE_BG_COLOR);
+    draw_rounded_rect_border(canvas, bubble_rect, radius, config::BUBBLE_BORDER_COLOR);
+
+    // Draw arrow (triangle pointing down to the NPC)
+    let arrow_top = by + bubble_h;
+    let arrow_bottom = arrow_top + arrow_h;
+    canvas.set_draw_color(config::BUBBLE_BG_COLOR);
+    for row in 0..arrow_h {
+        let half = arrow_hw - (row * arrow_hw / arrow_h);
+        let _ = canvas.draw_line(
+            Point::new(anchor_x - half, arrow_top + row),
+            Point::new(anchor_x + half, arrow_top + row),
+        );
+    }
+    // Arrow border (left and right edges)
+    canvas.set_draw_color(config::BUBBLE_BORDER_COLOR);
+    let _ = canvas.draw_line(Point::new(anchor_x - arrow_hw, arrow_top), Point::new(anchor_x, arrow_bottom));
+    let _ = canvas.draw_line(Point::new(anchor_x + arrow_hw, arrow_top), Point::new(anchor_x, arrow_bottom));
+
+    // Draw speaker name
+    let mut cy = by + padding;
+    if let Some(tex) = text.render(speaker, config::BUBBLE_NAME_FONT_SIZE, config::BUBBLE_NAME_COLOR) {
+        let q = tex.query();
+        let dst = Rect::new(bx + padding, cy, q.width, q.height);
+        let _ = canvas.copy(tex, None, dst);
+    }
+    cy += name_h;
+
+    // Draw wrapped text lines
+    for line in &lines {
+        if let Some(tex) = text.render(line, config::BUBBLE_TEXT_FONT_SIZE, config::BUBBLE_TEXT_COLOR) {
+            let q = tex.query();
+            let dst = Rect::new(bx + padding, cy, q.width, q.height);
+            let _ = canvas.copy(tex, None, dst);
+        }
+        cy += line_h;
+    }
+
+    // Draw hint
+    cy += 2;
+    if let Some(tex) = text.render(hint, config::BUBBLE_HINT_FONT_SIZE, config::BUBBLE_HINT_COLOR) {
+        let q = tex.query();
+        let dst = Rect::new(bx + padding, cy, q.width, q.height);
+        let _ = canvas.copy(tex, None, dst);
     }
 }
 

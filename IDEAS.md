@@ -227,7 +227,7 @@ Flujo:
 
 ---
 
-## 5. Pathfinding visualizado (debug view) — `pendiente` — **URGENTE**
+## 5. Pathfinding visualizado (debug view) — `hecho`
 
 Toggle en el debug menu que pinta visualmente el A* corriendo: `open set` en azul semi-transparente, `closed set` en gris, path final en verde, nodo actualmente expandido en amarillo. Es 100% debugging y **client-local**: en coop (P9) cada jugador ve solo el path de *su* personaje cuando activa su propio debug, no se sincroniza por red. Va a ser invaluable cuando lleguen los enemigos con AI en P6 y necesitemos entender por qué un mob eligió cierta ruta.
 
@@ -334,3 +334,155 @@ Quicksave con `F5` que serializa el `GameState` completo a `assets/saves/quick.j
   ```
 - Tecla F5/F9 manejada en `main.rs` directamente sin pasar por `GameInput` (es una operación de cliente, no un input de juego).
 - En P9, el mismo `serde` derive sirve para mandar el state por TCP con `bincode::serialize()`. Core no crece métodos por cada destino nuevo (`save_to_file`, `send_to_socket`, `compute_hash`, etc.) — el transport vive afuera siempre.
+
+---
+
+## 15. LLM-driven enemy AI — `pendiente`
+
+Enemies use a language model API to make tactical decisions based on combat context, terrain, and their behavior profile from the Monster Manual.
+
+**Input al LLM:** ASCII grid 7x7 centrado en el enemigo + JSON estructurado con estado de combate. Sin lenguaje natural para el contexto espacial.
+
+```
+GRID 7x7:
+. . T . . . .
+. . . . A . .
+. . # # . . .
+. . # E # . .
+. . . . . . .
+. . . . P . .
+. . . . . . .
+
+Leyenda: E=enemigo, P=player, A=aliado, T=árbol, #=pared, .=libre
+```
+
+**Combat state JSON:**
+```json
+{
+  "enemy": {"id": "goblin_01", "hp": 8, "hp_max": 12, "position": [3,3], "conditions": []},
+  "player": {"hp_visible": false, "position": [4,5], "last_action": "attack", "hit_last_turn": true},
+  "round": 3,
+  "distance_to_player": 2,
+  "cover_available": [[2,2],[2,3],[2,4]],
+  "history": ["round1: moved north", "round2: missed attack"]
+}
+```
+
+**Behavior profile JSON:**
+```json
+{
+  "flee_threshold": 0.3,
+  "preferred_range": "melee",
+  "abilities": ["nimble_escape", "pack_tactics"],
+  "personality": "coward"
+}
+```
+
+**Output esperado:**
+```json
+{
+  "action": "hide|attack|move|flee|use_ability",
+  "move_to": [x, y],
+  "attack_target": "entity_id o null",
+  "ability": "ability_name o null",
+  "reasoning": "string corto"
+}
+```
+
+**Arquitectura:** `GameState.tick()` → si es turno de enemigo → construir `CombatContext` → llamar `AIDecisionService` (async) → recibir `GameInput` del LLM → `apply_input()` igual que un jugador humano. El LLM es otro "jugador" en el pipeline existente.
+
+**Optimizaciones:** ventana 7x7 centrada en el enemigo (no el mapa completo), cover/range pre-computados en Rust antes de mandar al LLM, temperature 0.2-0.3 para consistencia, override en engine para casos críticos (hp=0, etc.).
+
+**Costo estimado:** ~300-400 tokens por decisión. Aceptable para combate por turnos. Para demo: IA básica en encuentros normales, LLM solo en boss fights.
+
+**Ubicación en código:** `src/ai/llm_decision.rs` con `build_combat_context()` y `request_decision()`. Integración en `game_state.rs` en el tick de turno enemigo.
+
+
+## 16. Layered sprite rendering para equipamiento modular — `pendiente` — **P5**
+
+Sistema de composición de sprites por capas que permite cambiar el equipamiento de cualquier personaje en runtime sin pre-renderizar todas las combinaciones posibles.
+
+**Concepto:** En lugar de un sprite único por "personaje con equipo X", el renderer apila capas independientes en orden. Cada capa es un spritesheet con fondo transparente que contiene exactamente las mismas dimensiones, direcciones y frames que el body base.
+
+**Stack de capas (orden de dibujado):**
+```
+1. body_base     → piel, proporciones de la raza
+2. undergarment  → ropa interior / bodysuit
+3. legs          → pantalón, falda, faldas
+4. torso         → camisa, túnica, armadura de cuerpo
+5. cape          → capa, manto (opcional)
+6. hands         → guantes, brazaletes
+7. head          → casco, capucha, sombrero
+8. weapon_main   → arma mano derecha
+9. weapon_off    → escudo, arma mano izquierda
+10. effects      → auras, maldiciones, bendiciones (P6)
+```
+
+**Compatibilidad por raza:**
+- Humano y Tiefling comparten el mismo body_base (mismas proporciones) → comparten todos los spritesheets de ropa.
+- Semiorco necesita spritesheets propios por ser 15-20% más alto y ancho.
+- La raza define qué `body_size_class` usa: `medium` (humano/tiefling/elfo) o `large` (semiorco/dragonborn).
+
+**Pipeline de render en Blender (automatizado con MCP):**
+- Escena con body base + todas las piezas de ropa como objetos Blender separados.
+- Script Python itera las 8 direcciones, oculta todo menos la pieza a renderizar, renderiza a 64x128px con fondo transparente, guarda el PNG.
+- Convención de nombres: `{size_class}_{slot}_{item_id}_{direction}.png` agrupados en spritesheets de 8 frames.
+- Body base se renderiza una vez por raza. Cada pieza de ropa se renderiza una vez y funciona para todas las razas del mismo `size_class`.
+
+**Ahorro de trabajo:**
+- Sin layers: 10 piezas × 8 dirs × 8 frames = 640 renders por personaje.
+- Con layers: 10 piezas × 8 dirs × 8 frames = 640 renders totales para **todas** las razas del mismo size_class.
+
+**Struct de equipamiento en `core/entity.rs`:**
+```rust
+pub struct Equipment {
+    pub body_base: String,       // "human_base", "halforc_base"
+    pub undergarment: Option<String>,
+    pub legs: Option<String>,
+    pub torso: Option<String>,
+    pub cape: Option<String>,
+    pub hands: Option<String>,
+    pub head: Option<String>,
+    pub weapon_main: Option<String>,
+    pub weapon_off: Option<String>,
+}
+```
+
+**Renderer:** `draw_entity()` itera el stack de capas en orden, por cada capa no-None llama `draw_layer(key, direction_frame_src_rect, dst)`. Si el asset no está cargado, la capa se skipea silenciosamente (fallback graceful).
+
+**Restricción pixel-perfect:** todos los spritesheets de una misma `size_class` tienen que renderizarse con la cámara y el personaje en la misma posición exacta en Blender. El body nunca se mueve entre renders, solo se cambia la visibilidad de los objetos.
+
+**Ubicación en código:**
+- `core/entity.rs`: agregar struct `Equipment`, reemplazar `sprite_key: String` por `equipment: Equipment`.
+- `render/renderer.rs`: `draw_entity()` pasa de un `canvas.copy` a un loop sobre las capas del equipment.
+- `assets/sprites/equipment/{size_class}/{slot}/` para organizar los PNGs por categoría.
+- `assets_dev/scripts/render_equipment.py`: script Blender MCP que automatiza los renders por dirección y pieza.
+
+---
+
+## 17. Sprites de alta resolución (256×512 o 512×1024) — `pendiente` — **polish**
+
+Aumentar la resolución de los sprites de personajes para mayor nitidez, especialmente visible con zoom alto.
+
+**Análisis de impacto:**
+
+| Factor | 128×256 (actual) | 256×512 (doble) | 512×1024 (4x) |
+|--------|-----------------|-----------------|----------------|
+| RAM por sprite | ~130 KB | ~520 KB | ~2 MB |
+| Player (8 idle + 64 walk) | ~9 MB | ~37 MB | ~148 MB |
+| 7 NPCs (8 frames c/u) | ~7 MB | ~29 MB | ~115 MB |
+| Total VRAM | ~16 MB | ~66 MB | ~263 MB |
+| Tiempo de carga | ~0.5s | ~1.5s | ~5s |
+| FPS | sin cambio | sin cambio | sin cambio |
+
+**Recomendación:** 256×512 es el sweet spot — nítido en zoom 2x, costo de RAM aceptable (~66 MB). A 512×1024 hay que cargar solo los sprites de la escena actual, no todos al inicio.
+
+**Cambios necesarios en código:**
+- `config::ENTITY_SCALE`: ajustar para que sprites más grandes no se vean gigantes
+- Offsets del sprite debug: recalibrar
+- Contornos pre-calculados: se regeneran solos (más puntos pero mismo costo de CPU)
+- Considerar carga lazy por escena si se va a 512×1024
+
+**Para el Claude de assets:** regenerar todos los sprites con el mismo setup de cámara (ortográfica iso, X=60°, Z=45°) pero a mayor resolución. Los NPCs pasan de spritesheets 1024×256 a 2048×512 (o 4096×1024). Los nombres y la convención no cambian.
+
+**Ubicación en código:** Solo tocar `config.rs` (ENTITY_SCALE) y posiblemente `assets.rs` si se implementa carga lazy.

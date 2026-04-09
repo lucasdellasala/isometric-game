@@ -5,73 +5,137 @@ use crate::render::iso::grid_to_screen;
 use crate::core::pathfinding::{self, Pos};
 use crate::core::tilemap::Tilemap;
 
-/// NPC visual variant — determines which spritesheet to use.
+/// NPC visual variant — determines which sprite set to use.
+/// Naming: {ethnicity}_{clothes_color}_{hair_color}
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum NpcVariant {
-    AfricanBlack,
-    AfricanBrown,
-    AfricanCream,
-    CaucasianBlack,
-    CaucasianBrown,
-    CaucasianCream,
-    LatinoBlack,
-    LatinoBrown,
-    LatinoCream,
+    AfricanCrBk,
+    AfricanGnCr,
+    CaucasianGnBn,
+    CaucasianYlBk,
+    LatinoBkBn,
+    LatinoYlBk,
 }
 
 impl NpcVariant {
-    /// Asset key suffix for this variant.
+    /// Asset key prefix for this variant (without direction suffix).
     pub fn asset_key(&self) -> &'static str {
         match self {
-            NpcVariant::AfricanBlack => "npc_african_black",
-            NpcVariant::AfricanBrown => "npc_african_brown",
-            NpcVariant::AfricanCream => "npc_african_cream",
-            NpcVariant::CaucasianBlack => "npc_caucasian_black",
-            NpcVariant::CaucasianBrown => "npc_caucasian_brown",
-            NpcVariant::CaucasianCream => "npc_caucasian_cream",
-            NpcVariant::LatinoBlack => "npc_latino_black",
-            NpcVariant::LatinoBrown => "npc_latino_brown",
-            NpcVariant::LatinoCream => "npc_latino_cream",
+            NpcVariant::AfricanCrBk => "npc_african_cr_bk",
+            NpcVariant::AfricanGnCr => "npc_african_gn_cr",
+            NpcVariant::CaucasianGnBn => "npc_caucasian_gn_bn",
+            NpcVariant::CaucasianYlBk => "npc_caucasian_yl_bk",
+            NpcVariant::LatinoBkBn => "npc_latino_bk_bn",
+            NpcVariant::LatinoYlBk => "npc_latino_yl_bk",
         }
     }
 
     /// Pick a random variant.
     pub fn random() -> NpcVariant {
         let variants = [
-            NpcVariant::AfricanBlack, NpcVariant::AfricanBrown, NpcVariant::AfricanCream,
-            NpcVariant::CaucasianBlack, NpcVariant::CaucasianBrown, NpcVariant::CaucasianCream,
-            NpcVariant::LatinoBlack, NpcVariant::LatinoBrown, NpcVariant::LatinoCream,
+            NpcVariant::AfricanCrBk, NpcVariant::AfricanGnCr,
+            NpcVariant::CaucasianGnBn, NpcVariant::CaucasianYlBk,
+            NpcVariant::LatinoBkBn, NpcVariant::LatinoYlBk,
         ];
         let idx = rand::thread_rng().gen_range(0..variants.len());
         variants[idx]
     }
 }
 
-/// Direction index for NPC spritesheet frames (0-7).
-/// Maps to the 8 columns in the 1024x256 spritesheet.
-pub fn facing_to_npc_frame(facing: u16) -> u32 {
-    // Spritesheet frame order: S, SO, O, NO, N, NE, E, SE (indices 0-7)
-    // Our facing: 0=S, 45=SO, 90=O, 135=NO, 180=N, 225=NE, 270=E, 315=SE
-    (facing / 45) as u32
+/// Enemy visual type — determines which sprite set to use.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum EnemyType {
+    Orc,
 }
 
-/// Map grid movement (dx, dy) to the sprite angle that looks correct in isometric view.
+impl EnemyType {
+    /// Asset key prefix for this enemy type (without direction suffix).
+    pub fn asset_key(&self) -> &'static str {
+        match self {
+            EnemyType::Orc => "enemy_orc",
+        }
+    }
+}
+
+/// 8 cardinal/intercardinal directions as seen on screen (not grid).
+/// N = top of screen, S = bottom, etc.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Direction {
+    N,
+    NE,
+    E,
+    SE,
+    S,
+    SW,
+    W,
+    NW,
+}
+
+impl Direction {
+    /// Suffix for sprite filenames (e.g., "S", "NE", "W").
+    pub fn sprite_suffix(&self) -> &'static str {
+        match self {
+            Direction::N  => "N",
+            Direction::NE => "NE",
+            Direction::E  => "E",
+            Direction::SE => "SE",
+            Direction::S  => "S",
+            Direction::SW => "SW",
+            Direction::W  => "W",
+            Direction::NW => "NW",
+        }
+    }
+
+    /// Index into NPC spritesheet frames (0-7).
+    /// Frame order in the 1024×256 sheet: S, SW, W, NW, N, NE, E, SE
+    pub fn spritesheet_frame(&self) -> u32 {
+        match self {
+            Direction::S  => 0,
+            Direction::SW => 1,
+            Direction::W  => 2,
+            Direction::NW => 3,
+            Direction::N  => 4,
+            Direction::NE => 5,
+            Direction::E  => 6,
+            Direction::SE => 7,
+        }
+    }
+
+    /// All 8 directions for random selection.
+    pub fn all() -> [Direction; 8] {
+        [Direction::N, Direction::NE, Direction::E, Direction::SE,
+         Direction::S, Direction::SW, Direction::W, Direction::NW]
+    }
+}
+
+/// Map grid movement (dx, dy) to the screen direction in isometric view.
 /// In iso projection, grid axes are rotated 45° from screen axes:
-///   grid (0, -1) = screen north     → sprite 180° (back to camera)
-///   grid (1,  0) = screen southeast → sprite 270°
-///   grid (0,  1) = screen south     → sprite 000° (facing camera)
-///   grid (-1, 0) = screen northwest → sprite 090°
-fn grid_dir_to_facing(dx: i32, dy: i32) -> u16 {
+///   grid (0, -1) = screen NW (up-left)       → W key
+///   grid (1, -1) = screen N  (up)             → W+D keys
+///   grid (1,  0) = screen NE (up-right)       → D key
+///   grid (1,  1) = screen E  (right)          → D+S keys (not yet supported)
+///   grid (0,  1) = screen SE (down-right)     → S key  (but actually SW visually... wait)
+///
+/// CORRECTION for iso: each grid cardinal maps to a screen diagonal:
+///   W key  → grid (0,-1)  → screen goes up-left    → NW
+///   D key  → grid (1, 0)  → screen goes down-right → SE
+///   S key  → grid (0, 1)  → screen goes down-left  → SW
+///   A key  → grid (-1,0)  → screen goes up-right   → NE
+///   W+D    → grid (1,-1)  → screen goes up         → N
+///   D+S    → grid (1, 1)  → screen goes right       → E
+///   S+A    → grid (-1,1)  → screen goes down        → S
+///   A+W    → grid (-1,-1) → screen goes left         → W
+fn grid_dir_to_facing(dx: i32, dy: i32) -> Direction {
     match (dx, dy) {
-        ( 0, -1) => 180,  // grid north → screen up → back to camera
-        ( 1, -1) => 225,  // grid NE → screen right
-        ( 1,  0) =>  90,  // grid east → screen SE
-        ( 1,  1) => 315,  // grid SE → screen down-right
-        ( 0,  1) =>   0,  // grid south → screen down → facing camera
-        (-1,  1) =>  45,  // grid SW → screen down-left
-        (-1,  0) => 270,  // grid west → screen NW
-        (-1, -1) => 135,  // grid NW → screen up-left
-        _ => 0,
+        ( 0, -1) => Direction::NE,  // W key → up-right on screen
+        ( 1, -1) => Direction::E,   // W+D → right on screen
+        ( 1,  0) => Direction::SE,  // D key → down-right on screen
+        ( 1,  1) => Direction::S,   // D+S → straight down
+        ( 0,  1) => Direction::SW,  // S key → down-left on screen
+        (-1,  1) => Direction::W,   // S+A → left on screen
+        (-1,  0) => Direction::NW,  // A key → up-left on screen
+        (-1, -1) => Direction::N,   // A+W → straight up
+        _ => Direction::SW,
     }
 }
 
@@ -95,14 +159,14 @@ pub struct Entity {
     // Visual position (where the entity is drawn, in screen pixels)
     pub visual_x: f64,
     pub visual_y: f64,
-    // Facing direction in degrees (0, 45, 90, ..., 315).
-    // Determines which directional sprite to draw.
-    pub facing: u16,
+    // Facing direction (screen cardinal). Determines which directional sprite to draw.
+    pub facing: Direction,
     // Walk animation state
     pub anim_tick: u32,       // ticks since animation started
     pub anim_moving: bool,    // true while visually in motion (lerp not finished)
     // NPC-specific state
-    pub npc_variant: Option<NpcVariant>,  // which spritesheet to use (None for non-NPCs)
+    pub npc_variant: Option<NpcVariant>,  // which sprite set to use (None for non-NPCs)
+    pub enemy_type: Option<EnemyType>,    // which enemy sprite set (None for non-enemies)
     idle_rotate_timer: u32,               // ticks until next random facing change
     // Pathfinding state
     path: Vec<Pos>,
@@ -123,10 +187,11 @@ impl Entity {
             grid_y,
             visual_x: sx as f64,
             visual_y: sy as f64,
-            facing: 0,
+            facing: Direction::S,
             anim_tick: 0,
             anim_moving: false,
             npc_variant: if kind == EntityKind::Npc { Some(NpcVariant::random()) } else { None },
+            enemy_type: if kind == EntityKind::Enemy { Some(EnemyType::Orc) } else { None },
             idle_rotate_timer: if kind == EntityKind::Npc || kind == EntityKind::Enemy {
                 rand::thread_rng().gen_range(config::IDLE_ROTATE_MIN_TICKS..=config::IDLE_ROTATE_MAX_TICKS)
             } else { 0 },
@@ -254,7 +319,8 @@ impl Entity {
                 self.idle_rotate_timer -= 1;
             } else {
                 let mut rng = rand::thread_rng();
-                self.facing = (rng.gen_range(0..8u16) * 45) as u16;
+                let dirs = Direction::all();
+                self.facing = dirs[rng.gen_range(0..dirs.len())];
                 self.idle_rotate_timer = rng.gen_range(config::IDLE_ROTATE_MIN_TICKS..=config::IDLE_ROTATE_MAX_TICKS);
             }
         }

@@ -139,15 +139,12 @@ impl GameState {
                     .map(|e| (e.grid_x, e.grid_y));
 
                 if let Some((px, py)) = player_pos {
-                    // Look for an adjacent NPC/Enemy (4 cardinal directions)
-                    let adjacent: Vec<(i32, i32)> = vec![
-                        (px - 1, py), (px + 1, py),
-                        (px, py - 1), (px, py + 1),
-                    ];
-
+                    // Look for an adjacent NPC/Enemy (8 directions, Chebyshev distance <= 1)
                     let target = self.entities.iter().find(|e| {
-                        e.id != entity_id
-                            && adjacent.contains(&(e.grid_x, e.grid_y))
+                        if e.id == entity_id { return false; }
+                        let dx = (e.grid_x - px).abs();
+                        let dy = (e.grid_y - py).abs();
+                        dx <= 1 && dy <= 1
                     });
 
                     if let Some(target) = target {

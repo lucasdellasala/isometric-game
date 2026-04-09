@@ -4,6 +4,9 @@
 # Development assets (Blender source files, 3D models, WIP renders)
 /assets_dev/
 
+# Sprite backups (created by asset generation agents)
+assets/sprites/_backup/
+
 # Binary source files (should never be in git)
 *.blend
 *.blend1
