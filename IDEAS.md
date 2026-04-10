@@ -37,7 +37,7 @@ Entidades (NPCs, enemies) cercanas al player se dibujan semi-transparentes cuand
 
 ---
 
-## 3. Editor de mapas in-game (place tiles, NPCs y spawn) — `pendiente`
+## 3. Editor de mapas in-game (place tiles, NPCs y spawn) — `pendiente` — **P3**
 
 Modo editor activable con una tecla (ej: `F2`) que permite construir mapas a mano sobre el mismo cliente del juego: pintar tiles, colocar NPCs/walls, marcar el spawn del jugador, y guardar/cargar a `assets/maps/*.json`. Reusa todo el rendering existente — la idea es que editar un mapa se vea exactamente igual que jugarlo.
 
@@ -112,7 +112,7 @@ Modo editor activable con una tecla (ej: `F2`) que permite construir mapas a man
 
 ---
 
-## 4. Voces para diálogos de NPCs (texto + audio sincronizado) — `pendiente`
+## 4. Voces para diálogos de NPCs (texto + audio sincronizado) — `pendiente` — **P8**
 
 Sistema de diálogo estructurado con líneas múltiples y, opcionalmente, un archivo de voz asociado a cada línea. Cuando el jugador interactúa con un NPC y avanza por una línea, suena el clip correspondiente y el texto aparece sincronizado en el cuadro de diálogo. Si no hay audio para esa línea, el sistema cae a "modo silencioso" con tiempo de lectura proporcional al largo del texto.
 
@@ -281,7 +281,7 @@ Nueva variante `EntityKind::Item { item_id: String, quantity: u32 }` con sprite 
 
 ---
 
-## 10. Mini-mapa en esquina superior derecha — `pendiente` — **polish (sin fase)**
+## 10. Mini-mapa en esquina superior derecha — `pendiente` — **P3**
 
 Render de una versión miniatura del mapa (1px por tile) con colores base de cada `TileKind`, posición del player como punto blanco parpadeante, NPCs como puntos amarillos, área explorada vs no explorada según FOV (lo no explorado se dibuja en negro). Toggle con tecla `M`. Útil para debug ahora y para gameplay real cuando los mapas crezcan a 200×200+.
 
@@ -305,7 +305,7 @@ Sprite animado de un slash (3-5 frames) que se dibuja una sola vez en la direcci
 
 ---
 
-## 13. Hover info sobre NPCs y objetos — `pendiente` — **polish (sin fase)**
+## 13. Hover info sobre NPCs y objetos — `pendiente` — **P3**
 
 Cuando el mouse está sobre una entidad, aparece un tooltip pequeño con su nombre, kind, y (más adelante) HP/level/faction. Implementado reusando el sistema de hover de tile que ya existe en `render/renderer.rs`. Para NPCs adyacentes al player, agrega "Press E to talk" como hint de UX, eliminando la fricción de no saber qué hacer con un NPC nuevo.
 
@@ -337,7 +337,7 @@ Quicksave con `F5` que serializa el `GameState` completo a `assets/saves/quick.j
 
 ---
 
-## 15. LLM-driven enemy AI — `pendiente`
+## 15. LLM-driven enemy AI — `pendiente` — **P6**
 
 Enemies use a language model API to make tactical decisions based on combat context, terrain, and their behavior profile from the Monster Manual.
 
@@ -460,7 +460,7 @@ pub struct Equipment {
 
 ---
 
-## 17. Sprites de alta resolución (256×512 o 512×1024) — `pendiente` — **polish**
+## 17. Sprites de alta resolución (256×512 o 512×1024) — `hecho`
 
 Aumentar la resolución de los sprites de personajes para mayor nitidez, especialmente visible con zoom alto.
 
@@ -489,7 +489,7 @@ Aumentar la resolución de los sprites de personajes para mayor nitidez, especia
 
 ---
 
-## 18. Sprites de idle animado (respiracion/movimiento sutil) — `pendiente` — **P4**
+## 18. Sprites de idle animado (respiracion/movimiento sutil) — `hecho`
 
 Reemplazar el idle estatico actual (1 frame por direccion = 8 PNGs) con un idle animado que muestre respiracion y micro-movimientos, para que los personajes se sientan vivos cuando estan parados. El formato es identico al walk: 8 direcciones x 8 frames = 64 PNGs por personaje.
 

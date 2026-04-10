@@ -12,7 +12,14 @@ Registro de cambios del RPG isometrico multijugador estilo D&D, construido desde
 - **Transparencia de oclusión:** Entidades cercanas al player (Chebyshev ≤ 1) con depth row mayor o mismo tile se dibujan semi-transparentes (alpha 128). Muros y pastos usan intersección de rects con player_rect pre-calculado. Enemies comparten el sistema con NPCs
 - **Pasto decorativo:** 8 sprites de hierba distribuidos pseudo-aleatoriamente sobre tiles Grass con oclusión parcial (detrás/delante del player)
 - **Posiciones bloqueadas:** `GameState.blocked: HashSet<(i32,i32)>` para objetos que bloquean movimiento y pathfinding
-- **NPCs y enemies con PNGs individuales por dirección:** 7 variantes de NPC + 2 de enemy, 8 PNGs por variante (uno por dirección cardinal). Misma lógica que el player, sin spritesheets en runtime
+- **NPCs y enemies con PNGs individuales por dirección:** 6 variantes de NPC + 1 de enemy (orc), 8 PNGs por variante. En runtime se cargan como spritesheets pre-generados para optimizar boot time
+- **Idle breathing animations:** Animación sutil de respiración para todas las entidades (player, NPCs, enemies). 8 frames por dirección a ~2.5 FPS. Cada entidad arranca en un frame random para evitar sincronización
+- **Entity shadow:** Sprite de sombra (`entity_shadow.png`) renderizado debajo de cada entidad con escala y offset configurables
+- **Per-entity scale:** Escala por tipo de entidad (`SCALE_PLAYER`, `SCALE_NPC`, `SCALE_ENEMY_ORC`) para que el orc se vea más grande que los humanos sin cambiar el tamaño de PNG
+- **Spritesheet build pipeline:** Script Python (`scripts/build_spritesheets.py`) que combina PNGs individuales en spritesheets (8 columnas × N filas). Solo regenera si los PNGs son más nuevos que el sheet
+- **Debug menu: Entity Scale:** Submenu para ajustar en runtime: base scale, per-type scale, shadow scale/offset, walk/idle animation speed (ticks/frame)
+- **Debug settings export:** Al cerrar el juego se exporta `debug_settings.json` con todos los valores actuales del debug menu
+- **Boot timing logs:** `boot_timing.log` y `boot_assets.log` con breakdown detallado del tiempo de carga. Se acumulan entre ejecuciones para comparar optimizaciones
 - **Movimiento 8-direccional:** WASD para 4 cardinales + combos (W+D, D+S, S+A, A+W) para diagonales
 - **Pathfinding 8-direccional:** A* con costo cardinal=10, diagonal=14 (≈√2×10) y heurística octile
 - **Direction enum:** Reemplaza `facing: u16` con ángulos por `facing: Direction` con cardinales de pantalla (N, NE, E, SE, S, SW, W, NW)
@@ -46,9 +53,12 @@ Registro de cambios del RPG isometrico multijugador estilo D&D, construido desde
 - **Spawn del jugador al centro del mapa:** en vez de (0,0), ahora aparece en `(cols/2, rows/2)`
 - **Tile rendering normalizado:** `draw_tile()` siempre dibuja a `TILE_WIDTH x TILE_HEIGHT` independientemente del tamano real del sprite
 - **Frustum culling ampliado:** margen de culling duplicado a `TILE_WIDTH * 2` para evitar pop-in con zoom
-- **Entity rendering unificado:** Todos los tipos de entidades (player, NPC, enemy) usan PNGs individuales por dirección. Sin spritesheets en runtime, sin src_rect
+- **Entity rendering con spritesheets:** PNGs individuales en disco, combinados en spritesheets por `scripts/build_spritesheets.py` para carga rápida. El renderer usa `src_rect` para recortar frames
+- **Sprites a 256×512:** Resolución duplicada (antes 128×256). `ENTITY_SCALE = 0.33` compensa
 - **Interacción con NPCs a 8 direcciones:** Chebyshev distance ≤ 1 (antes solo 4 cardinales)
-- **Outlines con `generate_outline_for_image()`:** Reemplaza el esquema frágil de re-keying desde spritesheets. Cada PNG individual genera su outline directamente
+- **Outlines solo para idle estáticos:** Walk/idle animados usan el outline del idle estático (imperceptible a ~5 FPS, ahorra ~6s de boot)
+- **Velocidad de movimiento reducida:** `LERP_SPEED = 0.12`, `PATH_STEP_TICKS = 14`, `MOVE_COOLDOWN = 10`
+- **Boot time optimizado:** de 14.6s a 6.4s (-56%) mediante spritesheets + eliminación de outlines redundantes
 - **FOV radius por defecto aumentado:** de 10 a 18 tiles
 
 ### Eliminado
