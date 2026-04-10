@@ -1,6 +1,6 @@
 # 🎮 Isometric Game
 
-![isometric-game-02](https://github.com/user-attachments/assets/0b2c6ee0-ba1f-4b35-bd17-1f8e3edf2de7)
+![demo3 8mb](https://github.com/user-attachments/assets/c1e65cc9-43bd-4e02-b3e3-ffc87dd503e2)
 
 A learning project to master Rust by building an isometric RPG/exploration game from scratch — no game engine, just SDL2.
 
