@@ -408,13 +408,43 @@ print("Sheet saved:", out_path)
 
 ### Output paths convención
 
-| Variante | Path |
-|----------|------|
-| Orco (enemigo) | `assets/sprites/enemy/entity_npc_orc.png` |
-| Humano (NPC) | `assets/sprites/npc/entity_npc_human.png` |
-| Tiefling (NPC) | `assets/sprites/npc/entity_npc_tiefling.png` |
+Todos los sprites son 256×512 px (2× la resolución original de 128×256 para soportar zoom sin pixelarse). Cada raza/variante tiene su propia subcarpeta con 8 PNGs individuales (uno por dirección cardinal: S, SW, W, NW, N, NE, E, SE).
 
-(Los humanos en el proyecto tienen sufijos de ropa/piel, p.ej. `entity_npc_caucasian_yl_bk.png`. Adaptá el nombre cuando definamos las paletas finales.)
+```
+assets/sprites/
+├── player/
+│   ├── idle/
+│   │   ├── entity_player_S.png ... entity_player_SE.png     (8 PNGs, 256×512)
+│   ├── walk/
+│   │   ├── entity_player_walk_S_0.png ... _SE_7.png          (64 PNGs, 256×512)
+│   └── entity_shadow.png                                      (256×128)
+├── enemy/
+│   └── orc/
+│       ├── entity_orc_S.png ... entity_orc_SE.png            (8 idle, 256×512)
+│       └── walk/
+│           ├── entity_orc_walk_S_0.png ... _SE_7.png          (64 PNGs, 256×512)
+└── npc/
+    ├── african_cr_bk/
+    │   ├── entity_npc_african_cr_bk_S.png ... _SE.png         (8 PNGs, 256×512)
+    ├── african_gn_cr/
+    ├── caucasian_gn_bn/
+    ├── caucasian_yl_bk/
+    ├── latino_bk_bn/
+    └── latino_yl_bk/
+```
+
+**Naming:**
+- Player: `entity_player_{cardinal}.png` (idle), `entity_player_walk_{cardinal}_{frame}.png` (walk)
+- Enemy: `entity_orc_{cardinal}.png` (idle), `entity_orc_walk_{cardinal}_{frame}.png` (walk)
+- NPC: `entity_npc_{ethnicity}_{top}_{bottom}_{cardinal}.png` (idle), dentro de subcarpeta `{ethnicity}_{top}_{bottom}/`
+
+**ortho_scale por raza:**
+- Tiefling/Humano (idle): `1.69 * 1.05 / 0.9 ≈ 1.972` (10% más chico que orco)
+- Orco (idle): `1.69 * 1.05 ≈ 1.7745`
+- Orco (walk): `2.90` (bbox animado más grande por la zancada)
+- Tiefling (walk): `1.69 * 1.05 / 0.9 ≈ 1.972` (pendiente calcular bbox animado si se corta)
+
+**Shadow:** se renderiza como sprite independiente (`entity_shadow.png`, 256×128). El código Rust lo dibuja debajo del personaje, encima del tile. NO se incluye en los sprites de personaje.
 
 ---
 

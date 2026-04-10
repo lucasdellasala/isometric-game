@@ -63,6 +63,11 @@ impl<'a> AssetManager<'a> {
         self.textures.get_mut(key)
     }
 
+    /// Check if a texture is loaded (without borrowing mutably).
+    pub fn has_texture(&self, key: &str) -> bool {
+        self.textures.contains_key(key)
+    }
+
     /// Get pre-computed outline points for a sprite frame.
     /// Key format: "{asset_key}_{frame_index}" (e.g., "npc_african_black_3").
     pub fn get_outline(&self, key: &str) -> Option<&Vec<(i32, i32)>> {
@@ -223,6 +228,7 @@ impl<'a> AssetManager<'a> {
         ];
         for variant in &npc_variants {
             for (i, dir) in directions.iter().enumerate() {
+                // Idle
                 let key = format!("npc_{variant}_{dir}");
                 let path = format!("assets/sprites/npc/{variant}/entity_npc_{variant}_{dir}.png");
                 if self.load_image(&key, &path).is_err() {
@@ -230,6 +236,13 @@ impl<'a> AssetManager<'a> {
                 }
                 let outline_key = format!("npc_{variant}_{i}");
                 self.generate_outline_for_image(&outline_key, &path);
+
+                // Walk (optional — silently skip if files don't exist)
+                for frame in 0..8 {
+                    let wkey = format!("npc_{variant}_walk_{dir}_{frame}");
+                    let wpath = format!("assets/sprites/npc/{variant}/walk/entity_npc_{variant}_walk_{dir}_{frame}.png");
+                    let _ = self.load_image(&wkey, &wpath);
+                }
             }
         }
         // Legacy NPC fallback (placeholder)
@@ -240,6 +253,7 @@ impl<'a> AssetManager<'a> {
         let enemy_types = [("orc", "entity_orc")];
         for (enemy_type, file_prefix) in &enemy_types {
             for (i, dir) in directions.iter().enumerate() {
+                // Idle
                 let key = format!("enemy_{enemy_type}_{dir}");
                 let path = format!("assets/sprites/enemy/{enemy_type}/{file_prefix}_{dir}.png");
                 if self.load_image(&key, &path).is_err() {
@@ -247,8 +261,20 @@ impl<'a> AssetManager<'a> {
                 }
                 let outline_key = format!("enemy_{enemy_type}_{i}");
                 self.generate_outline_for_image(&outline_key, &path);
+
+                // Walk (optional — silently skip if files don't exist)
+                for frame in 0..8 {
+                    let wkey = format!("enemy_{enemy_type}_walk_{dir}_{frame}");
+                    let wpath = format!("assets/sprites/enemy/{enemy_type}/walk/{file_prefix}_walk_{dir}_{frame}.png");
+                    let _ = self.load_image(&wkey, &wpath);
+                }
             }
         }
+
+        // --- Entity shadow ---
+        // Shared shadow sprite rendered beneath all entities.
+        // Will be 256×128 when re-rendered; currently 128×64.
+        let _ = self.load_image("entity_shadow", "assets/sprites/player/entity_shadow.png");
 
         // --- Decoration sprites ---
         for i in 1..=8 {

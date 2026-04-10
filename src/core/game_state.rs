@@ -194,6 +194,48 @@ impl GameState {
             }
         }
 
+        // TEST: Enemy patrol — walks 2 tiles in each of 8 directions, returning to center.
+        // Remove this block once real AI is implemented.
+        {
+            let tilemap = &self.tilemap;
+            let blocked = &self.blocked;
+            for entity in &mut self.entities {
+                if entity.kind == EntityKind::Enemy && !entity.is_walking() {
+                    // Wait timer (5 seconds = 300 ticks at endpoints)
+                    if entity.patrol_wait > 0 {
+                        entity.patrol_wait -= 1;
+                        continue;
+                    }
+
+                    if entity.patrol_step.is_none() {
+                        entity.patrol_center = Some((entity.grid_x, entity.grid_y));
+                        entity.patrol_step = Some(0);
+                    }
+                    if let (Some((cx, cy)), Some(step)) = (entity.patrol_center, entity.patrol_step) {
+                        // 8 directions × 2 phases (out + back) = 16 steps per cycle
+                        let dir_index = (step / 2) % 8;
+                        let is_outward = step % 2 == 0;
+                        let dirs: [(i32, i32); 8] = [
+                            (0, -2), (2, -2), (2, 0), (2, 2),
+                            (0, 2), (-2, 2), (-2, 0), (-2, -2),
+                        ];
+                        let (tx, ty) = if is_outward {
+                            let (dx, dy) = dirs[dir_index];
+                            (cx + dx, cy + dy)
+                        } else {
+                            (cx, cy)
+                        };
+                        entity.move_to(tx, ty, tilemap, blocked);
+                        // Wait 5 seconds at each endpoint (outward position)
+                        if is_outward {
+                            entity.patrol_wait = 300;
+                        }
+                        entity.patrol_step = Some((step + 1) % 16);
+                    }
+                }
+            }
+        }
+
         // Recompute FOV from local player position
         if let Some(player) = self.get_entity(self.local_player_id) {
             self.fov_map.compute(player.grid_x, player.grid_y, self.fov_radius, &self.tilemap);

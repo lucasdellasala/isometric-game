@@ -15,3 +15,6 @@ assets/sprites/_backup/
 # Build artifacts
 *.rar
 *.gif
+
+# Debug settings (exported on game close, local to each developer)
+debug_settings.json

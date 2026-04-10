@@ -233,5 +233,7 @@ fn main() {
         }
     }
 
+    // Export debug settings to JSON so values can be reviewed and copied to config.rs
+    debug_menu.export_json("debug_settings.json");
     println!("Game closed");
 }

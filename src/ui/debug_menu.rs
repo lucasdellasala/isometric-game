@@ -15,6 +15,7 @@ enum ActiveSubmenu {
     SpriteOffset,
     TilePreview,
     GameSettings,
+    EntityScale,
 }
 
 /// A single adjustable value in a submenu.
@@ -50,6 +51,14 @@ pub struct DebugMenu {
     pub fov_radius: i32,
     pub camera_zoom: f64,
     pub show_pathfinding: bool,
+
+    // --- Entity scale settings ---
+    pub entity_base_scale: f64,
+    pub scale_player: f64,
+    pub scale_npc: f64,
+    pub scale_enemy_orc: f64,
+    pub shadow_scale: f64,
+    pub shadow_offset_y: i32,
 }
 
 impl DebugMenu {
@@ -77,6 +86,67 @@ impl DebugMenu {
             fov_radius: config::DEFAULT_FOV_RADIUS,
             camera_zoom: config::DEFAULT_CAMERA_ZOOM,
             show_pathfinding: false,
+
+            entity_base_scale: config::ENTITY_SCALE,
+            scale_player: config::SCALE_PLAYER,
+            scale_npc: config::SCALE_NPC,
+            scale_enemy_orc: config::SCALE_ENEMY_ORC,
+            shadow_scale: config::SHADOW_SCALE,
+            shadow_offset_y: config::SHADOW_OFFSET_Y,
+        }
+    }
+
+    /// Export all debug settings to a JSON file.
+    /// Called automatically when the game closes.
+    pub fn export_json(&self, path: &str) {
+        let json = format!(
+            r#"{{
+  "post_process": {{
+    "mode": "{}",
+    "scope": "{}",
+    "spread": {:.1},
+    "light_r": {}, "light_g": {}, "light_b": {},
+    "dark_r": {}, "dark_g": {}, "dark_b": {},
+    "posterize": {},
+    "edge_threshold": {}
+  }},
+  "sprite_offset": {{
+    "base_x": {},
+    "base_y": {}
+  }},
+  "tile_preview": {{
+    "water_variant": {}
+  }},
+  "game_settings": {{
+    "fov_radius": {},
+    "camera_zoom": {:.1},
+    "show_pathfinding": {}
+  }},
+  "entity_scale": {{
+    "base_scale": {:.2},
+    "player": {:.2},
+    "npc": {:.2},
+    "enemy_orc": {:.2},
+    "shadow_scale": {:.2},
+    "shadow_offset_y": {}
+  }}
+}}"#,
+            self.pp_mode.label(), self.pp_scope.label(),
+            self.pp_spread,
+            self.pp_light.0, self.pp_light.1, self.pp_light.2,
+            self.pp_dark.0, self.pp_dark.1, self.pp_dark.2,
+            self.pp_posterize, self.pp_edge_threshold,
+            self.sprite_base_x, self.sprite_base_y,
+            self.water_variant,
+            self.fov_radius, self.camera_zoom, self.show_pathfinding,
+            self.entity_base_scale, self.scale_player, self.scale_npc,
+            self.scale_enemy_orc, self.shadow_scale, self.shadow_offset_y,
+        );
+
+        if let Err(e) = std::fs::write(path, &json) {
+            eprintln!("Failed to export debug settings: {e}");
+        } else {
+            println!("Debug settings exported to {path}");
         }
     }
 
@@ -116,6 +186,7 @@ impl DebugMenu {
             "Sprite Offset Adjust",
             "Tile Preview",
             "Game Settings",
+            "Entity Scale",
         ]
     }
 
@@ -157,6 +228,14 @@ impl DebugMenu {
                 format!("Camera zoom:      {:.1}", self.camera_zoom),
                 format!("Show pathfinding: {}", if self.show_pathfinding { "ON" } else { "OFF" }),
             ],
+            ActiveSubmenu::EntityScale => vec![
+                format!("Base scale:       {:.2}", self.entity_base_scale),
+                format!("Player scale:     {:.2}", self.scale_player),
+                format!("NPC scale:        {:.2}", self.scale_npc),
+                format!("Orc scale:        {:.2}", self.scale_enemy_orc),
+                format!("Shadow scale:     {:.2}", self.shadow_scale),
+                format!("Shadow offset Y:  {}", self.shadow_offset_y),
+            ],
             ActiveSubmenu::TopLevel => vec![],
         }
     }
@@ -187,6 +266,7 @@ impl DebugMenu {
                 1 => ActiveSubmenu::SpriteOffset,
                 2 => ActiveSubmenu::TilePreview,
                 3 => ActiveSubmenu::GameSettings,
+                4 => ActiveSubmenu::EntityScale,
                 _ => ActiveSubmenu::TopLevel,
             };
             self.selected = 0;
@@ -238,6 +318,15 @@ impl DebugMenu {
                 2 => self.show_pathfinding = !self.show_pathfinding,
                 _ => {}
             },
+            ActiveSubmenu::EntityScale => match self.selected {
+                0 => self.entity_base_scale = ((self.entity_base_scale - 0.01) * 100.0).round() / 100.0,
+                1 => self.scale_player = ((self.scale_player - 0.05) * 100.0).round() / 100.0,
+                2 => self.scale_npc = ((self.scale_npc - 0.05) * 100.0).round() / 100.0,
+                3 => self.scale_enemy_orc = ((self.scale_enemy_orc - 0.05) * 100.0).round() / 100.0,
+                4 => self.shadow_scale = ((self.shadow_scale - 0.05) * 100.0).round() / 100.0,
+                5 => self.shadow_offset_y -= 1,
+                _ => {}
+            },
             _ => {}
         }
     }
@@ -278,6 +367,15 @@ impl DebugMenu {
                 2 => self.show_pathfinding = !self.show_pathfinding,
                 _ => {}
             },
+            ActiveSubmenu::EntityScale => match self.selected {
+                0 => self.entity_base_scale = ((self.entity_base_scale + 0.01) * 100.0).round() / 100.0,
+                1 => self.scale_player = ((self.scale_player + 0.05) * 100.0).round() / 100.0,
+                2 => self.scale_npc = ((self.scale_npc + 0.05) * 100.0).round() / 100.0,
+                3 => self.scale_enemy_orc = ((self.scale_enemy_orc + 0.05) * 100.0).round() / 100.0,
+                4 => self.shadow_scale = ((self.shadow_scale + 0.05) * 100.0).round() / 100.0,
+                5 => self.shadow_offset_y += 1,
+                _ => {}
+            },
             _ => {}
         }
     }
@@ -300,6 +398,7 @@ impl DebugMenu {
             ActiveSubmenu::SpriteOffset => ("Sprite Offset Adjust", self.submenu_items()),
             ActiveSubmenu::TilePreview => ("Tile Preview", self.submenu_items()),
             ActiveSubmenu::GameSettings => ("Game Settings", self.submenu_items()),
+            ActiveSubmenu::EntityScale => ("Entity Scale", self.submenu_items()),
         };
 
         let menu_h = (padding * 2 + line_height * (items.len() as i32 + 1) + 28) as u32;

@@ -69,7 +69,15 @@
       "Bash(cp assets/map.json build/isometric_game/assets/)",
       "Bash(python -c \"from PIL import Image; im = Image.open\\('assets/sprites/npc/entity_npc_caucasian_brown.png'\\); print\\('size:', im.size, 'mode:', im.mode\\)\")",
       "Bash(python:*)",
-      "mcp__blender__get_object_info"
+      "mcp__blender__get_object_info",
+      "Bash(identify \"C:/Users/Urano/Documents/repositorios/rust/assets/sprites/player/idle/entity_player_S.png\")",
+      "Bash(ls \"C:/Users/Urano/Documents/repositorios/rust/assets/sprites/enemy/entity_orc_\"*)",
+      "Bash(identify \"C:/Users/Urano/Documents/repositorios/rust/assets/sprites/enemy/entity_orc_S.png\")",
+      "Bash(identify \"C:/Users/Urano/Documents/repositorios/rust/assets/sprites/npc/entity_npc_african_cr_bk_S.png\")",
+      "Bash(identify \"C:/Users/Urano/Documents/repositorios/rust/assets/sprites/player/walk/entity_player_walk_S_0.png\")",
+      "Bash(identify \"C:/Users/Urano/Documents/repositorios/rust/assets/sprites/enemy/orc/walk/entity_orc_walk_S_0.png\")",
+      "Bash(python3 -c \"from PIL import Image; img=Image.open\\(r'C:\\\\Users\\\\Urano\\\\Documents\\\\repositorios\\\\rust\\\\assets\\\\sprites\\\\player\\\\idle\\\\entity_player_S.png'\\); print\\('idle:', img.size\\)\")",
+      "Bash(grep -v \"^$\")"
     ]
   }
 }

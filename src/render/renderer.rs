@@ -118,37 +118,53 @@ fn tile_texture_key(kind: TileKind, col: i32, row: i32, water_variant: u32) -> S
 
 use crate::core::entity::Direction;
 
-/// Get the texture key and optional src_rect for an entity.
-/// Get the texture key for an entity based on its kind and facing direction.
-/// All entity types now use individual PNGs per direction (no spritesheets).
-fn entity_texture_info(entity: &Entity) -> (String, Option<Rect>) {
+/// Get the texture key for an entity based on kind, facing, and walk state.
+/// Get the texture key for an entity based on its kind, facing direction, and walk state.
+/// All entity types use individual PNGs per direction.
+/// Walk key format: "{base}_walk_{DIR}_{frame}". Falls back to idle if walk sprite missing.
+fn entity_texture_key(entity: &Entity, assets: &AssetManager) -> String {
     let dir = entity.facing.sprite_suffix();
-    match entity.kind {
-        EntityKind::Player => {
-            let key = if let Some(frame) = entity.walk_frame() {
-                format!("entity_player_walk_{}_{}", dir, frame)
-            } else {
-                format!("entity_player_{}", dir)
-            };
-            (key, None)
-        }
+
+    // Determine the base key and walk key prefix
+    let (idle_key, walk_prefix) = match entity.kind {
+        EntityKind::Player => (
+            format!("entity_player_{}", dir),
+            Some(format!("entity_player_walk_{}", dir)),
+        ),
         EntityKind::Npc => {
             if let Some(variant) = entity.npc_variant {
-                let key = format!("{}_{}", variant.asset_key(), dir);
-                (key, None)
+                (
+                    format!("{}_{}", variant.asset_key(), dir),
+                    Some(format!("{}_walk_{}", variant.asset_key(), dir)),
+                )
             } else {
                 (String::from("entity_npc"), None)
             }
         }
         EntityKind::Enemy => {
             if let Some(etype) = entity.enemy_type {
-                let key = format!("{}_{}", etype.asset_key(), dir);
-                (key, None)
+                (
+                    format!("{}_{}", etype.asset_key(), dir),
+                    Some(format!("{}_walk_{}", etype.asset_key(), dir)),
+                )
             } else {
                 (format!("enemy_orc_{}", dir), None)
             }
         }
+    };
+
+    // If walking and walk sprites exist, use them. Otherwise fallback to idle.
+    if let Some(frame) = entity.walk_frame() {
+        if let Some(prefix) = walk_prefix {
+            let walk_key = format!("{}_{}", prefix, frame);
+            // Check if the walk sprite is loaded; if not, fall back to idle
+            if assets.has_texture(&walk_key) {
+                return walk_key;
+            }
+        }
     }
+
+    idle_key
 }
 
 /// Draw a tile texture at a screen position, darkened by FOV brightness, scaled by zoom.
@@ -224,32 +240,48 @@ fn draw_entity(
     let cx = ((entity.visual_x as i32 - cam.x) as f64 * zoom) as i32 + sw / 2;
     let cy = ((entity.visual_y as i32 - cam.y) as f64 * zoom) as i32 + sh / 2;
 
-    let (key, src_rect) = entity_texture_info(entity);
+    let key = entity_texture_key(entity, assets);
+
+    // Draw shadow beneath entity (scale from debug menu for live tuning)
+    if let Some(shadow) = assets.get_mut("entity_shadow") {
+        let shadow_q = shadow.query();
+        let shadow_zoom = zoom * debug_menu.shadow_scale;
+        let sw2 = (shadow_q.width as f64 * shadow_zoom) as u32;
+        let sh2 = (shadow_q.height as f64 * shadow_zoom) as u32;
+        let th_shadow = (TILE_HEIGHT as f64 * zoom) as i32;
+        let sy = (debug_menu.shadow_offset_y as f64 * zoom) as i32;
+        let shadow_dst = Rect::new(
+            cx - sw2 as i32 / 2,
+            cy + th_shadow / 2 - sh2 as i32 / 2 + sy,
+            sw2,
+            sh2,
+        );
+        let b = (brightness * 255.0) as u8;
+        shadow.set_color_mod(b, b, b);
+        let _ = canvas.copy(shadow, None, shadow_dst);
+    }
 
     if let Some(texture) = assets.get_mut(&key) {
-        let entity_zoom = zoom * config::ENTITY_SCALE;
+        // Per-entity scale from debug menu (live tuning)
+        let type_mult = match entity.kind {
+            EntityKind::Player => debug_menu.scale_player,
+            EntityKind::Npc => debug_menu.scale_npc,
+            EntityKind::Enemy => match entity.enemy_type {
+                Some(crate::core::entity::EnemyType::Orc) => debug_menu.scale_enemy_orc,
+                _ => 1.0,
+            },
+        };
+        let entity_zoom = zoom * debug_menu.entity_base_scale * type_mult;
         let th = (TILE_HEIGHT as f64 * zoom) as i32;
 
-        // For spritesheet NPCs, use the frame dimensions (128x256), not the full sheet
-        let (src_w, src_h) = match src_rect {
-            Some(r) => (r.width(), r.height()),
-            None => {
-                let q = texture.query();
-                (q.width, q.height)
-            }
-        };
-        let w = (src_w as f64 * entity_zoom) as u32;
-        let h = (src_h as f64 * entity_zoom) as u32;
+        let query = texture.query();
+        let w = (query.width as f64 * entity_zoom) as u32;
+        let h = (query.height as f64 * entity_zoom) as u32;
 
-        // Player uses debug_menu offsets, others use constants
-        let (off_x, off_y) = if entity.kind == EntityKind::Player {
-            let (dx, dy) = debug_menu.get_sprite_offset(entity.facing);
-            ((dx as f64 * zoom) as i32, (dy as f64 * zoom) as i32)
-        } else {
-            let ox = (config::ENTITY_OFFSET_X as f64 * zoom) as i32;
-            let oy = (config::ENTITY_OFFSET_Y as f64 * zoom) as i32;
-            (ox, oy)
-        };
+        // Sprite offset applies to all entities equally (same centering in PNGs)
+        let (dx, dy) = debug_menu.get_sprite_offset(entity.facing);
+        let off_x = (dx as f64 * zoom) as i32;
+        let off_y = (dy as f64 * zoom) as i32;
 
         let dst = Rect::new(
             cx - w as i32 / 2 + off_x,
@@ -282,7 +314,7 @@ fn draw_entity(
             }
         }
 
-        let _ = canvas.copy(texture, src_rect, dst);
+        let _ = canvas.copy(texture, None, dst);
         texture.set_alpha_mod(255); // reset for next use
 
         // Return player rect for occlusion checks
@@ -317,8 +349,16 @@ fn draw_entity(
                 };
 
                 if let Some(points) = assets.get_outline(&outline_key) {
-                    // Scale factor from sprite pixels to screen pixels
-                    let entity_zoom = zoom * config::ENTITY_SCALE;
+                    // Scale must match the sprite's actual rendered size (base × type multiplier)
+                    let outline_type_mult = match entity.kind {
+                        EntityKind::Player => debug_menu.scale_player,
+                        EntityKind::Npc => debug_menu.scale_npc,
+                        EntityKind::Enemy => match entity.enemy_type {
+                            Some(crate::core::entity::EnemyType::Orc) => debug_menu.scale_enemy_orc,
+                            _ => 1.0,
+                        },
+                    };
+                    let entity_zoom = zoom * debug_menu.entity_base_scale * outline_type_mult;
 
                     canvas.set_draw_color(color);
                     for &(ox, oy) in points {
@@ -394,20 +434,14 @@ fn compute_player_rect(state: &GameState, cam: &Camera, sw: i32, sh: i32, zoom: 
     let cx = ((player.visual_x as i32 - cam.x) as f64 * zoom) as i32 + sw / 2;
     let cy = ((player.visual_y as i32 - cam.y) as f64 * zoom) as i32 + sh / 2;
 
-    let (key, src_rect) = entity_texture_info(player);
+    let key = entity_texture_key(player, assets);
     let texture = assets.get_mut(&key)?;
-    let entity_zoom = zoom * config::ENTITY_SCALE;
+    let entity_zoom = zoom * debug_menu.entity_base_scale * debug_menu.scale_player;
     let th = (TILE_HEIGHT as f64 * zoom) as i32;
 
-    let (src_w, src_h) = match src_rect {
-        Some(r) => (r.width(), r.height()),
-        None => {
-            let q = texture.query();
-            (q.width, q.height)
-        }
-    };
-    let w = (src_w as f64 * entity_zoom) as u32;
-    let h = (src_h as f64 * entity_zoom) as u32;
+    let query = texture.query();
+    let w = (query.width as f64 * entity_zoom) as u32;
+    let h = (query.height as f64 * entity_zoom) as u32;
 
     let (dx, dy) = debug_menu.get_sprite_offset(player.facing);
     let off_x = (dx as f64 * zoom) as i32;

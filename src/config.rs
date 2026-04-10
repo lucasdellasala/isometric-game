@@ -25,22 +25,34 @@ pub const DEFAULT_CAMERA_ZOOM: f64 = 1.6;
 
 /// Manual offset to adjust entity sprite positioning on the tile.
 /// Positive X = move sprite right, Positive Y = move sprite down.
-pub const ENTITY_OFFSET_X: i32 = 2;
-pub const ENTITY_OFFSET_Y: i32 = 30;
+pub const ENTITY_OFFSET_X: i32 = 0;
+pub const ENTITY_OFFSET_Y: i32 = 24;
 
-/// Scale factor for entity sprites relative to zoom.
-/// 1.0 = full size, 0.66 = two thirds.
-pub const ENTITY_SCALE: f64 = 0.66;
+/// Base scale factor for entity sprites relative to zoom.
+/// Applied to all entities before the per-type multiplier.
+/// With 256×512 sprites: 0.33 ≈ same visual size as old 0.66 with 128×256.
+pub const ENTITY_SCALE: f64 = 0.33;
+
+/// Per-type scale multipliers (applied on top of ENTITY_SCALE).
+/// Allows orcs to be visually bigger than humans without changing PNG size.
+pub const SCALE_PLAYER: f64 = 1.0;
+pub const SCALE_NPC: f64 = 1.0;
+pub const SCALE_ENEMY_ORC: f64 = 1.2;
+
+/// Shadow sprite dimensions (256×128 PNG, rendered at tile size).
+pub const SHADOW_SCALE: f64 = 0.4;
+/// Shadow vertical offset from entity anchor point (pixels, pre-zoom).
+pub const SHADOW_OFFSET_Y: i32 = 0;
 
 // =============================================================================
 // ENTITY BEHAVIOR
 // =============================================================================
 
 /// Visual interpolation speed (0.0–1.0). Higher = snappier movement.
-pub const LERP_SPEED: f64 = 0.2;
+pub const LERP_SPEED: f64 = 0.12;
 
 /// Ticks between each pathfinding step.
-pub const PATH_STEP_TICKS: u32 = 8;
+pub const PATH_STEP_TICKS: u32 = 14;
 
 /// Total frames in the walk animation cycle.
 pub const WALK_ANIM_FRAMES: u32 = 8;
@@ -55,7 +67,7 @@ pub const IDLE_ROTATE_MIN_TICKS: u32 = 180;
 pub const IDLE_ROTATE_MAX_TICKS: u32 = 480;
 
 /// Movement input cooldown in ticks (WASD).
-pub const MOVE_COOLDOWN: u32 = 6;
+pub const MOVE_COOLDOWN: u32 = 10;
 
 // =============================================================================
 // FOV & VISIBILITY

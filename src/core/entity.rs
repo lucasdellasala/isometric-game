@@ -55,6 +55,13 @@ impl EnemyType {
             EnemyType::Orc => "enemy_orc",
         }
     }
+
+    /// Per-type scale multiplier (on top of config::ENTITY_SCALE).
+    pub fn scale(&self) -> f64 {
+        match self {
+            EnemyType::Orc => config::SCALE_ENEMY_ORC,
+        }
+    }
 }
 
 /// 8 cardinal/intercardinal directions as seen on screen (not grid).
@@ -167,6 +174,10 @@ pub struct Entity {
     // NPC-specific state
     pub npc_variant: Option<NpcVariant>,  // which sprite set to use (None for non-NPCs)
     pub enemy_type: Option<EnemyType>,    // which enemy sprite set (None for non-enemies)
+    // TEST: patrol state for enemy walk animation testing. Remove when real AI exists.
+    pub patrol_center: Option<(i32, i32)>,
+    pub patrol_step: Option<usize>,
+    pub patrol_wait: u32,  // ticks to wait before next patrol move
     idle_rotate_timer: u32,               // ticks until next random facing change
     // Pathfinding state
     path: Vec<Pos>,
@@ -192,6 +203,9 @@ impl Entity {
             anim_moving: false,
             npc_variant: if kind == EntityKind::Npc { Some(NpcVariant::random()) } else { None },
             enemy_type: if kind == EntityKind::Enemy { Some(EnemyType::Orc) } else { None },
+            patrol_center: None,
+            patrol_step: None,
+            patrol_wait: 0,
             idle_rotate_timer: if kind == EntityKind::Npc || kind == EntityKind::Enemy {
                 rand::thread_rng().gen_range(config::IDLE_ROTATE_MIN_TICKS..=config::IDLE_ROTATE_MAX_TICKS)
             } else { 0 },
@@ -203,6 +217,18 @@ impl Entity {
     }
 
     /// Try to move one tile in a direction. Cancels any active path.
+    /// Per-entity scale multiplier based on entity type.
+    /// Applied on top of config::ENTITY_SCALE in the renderer.
+    pub fn type_scale(&self) -> f64 {
+        match self.kind {
+            EntityKind::Player => config::SCALE_PLAYER,
+            EntityKind::Npc => config::SCALE_NPC,
+            EntityKind::Enemy => {
+                self.enemy_type.map(|e| e.scale()).unwrap_or(1.0)
+            }
+        }
+    }
+
     pub fn try_move(&mut self, dx: i32, dy: i32, tilemap: &Tilemap, blocked: &std::collections::HashSet<(i32, i32)>) {
         self.clear_path();
 
