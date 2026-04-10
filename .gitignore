@@ -16,5 +16,8 @@ assets/sprites/_backup/
 *.rar
 *.gif
 
-# Debug settings (exported on game close, local to each developer)
+# Debug settings and logs (exported on game close, local to each developer)
 debug_settings.json
+boot_timing.log
+boot_assets.log
+*.log

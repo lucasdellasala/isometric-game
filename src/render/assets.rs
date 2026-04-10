@@ -14,9 +14,11 @@ use crate::render::iso::{TILE_HEIGHT, TILE_WIDTH};
 pub struct AssetManager<'a> {
     texture_creator: &'a TextureCreator<WindowContext>,
     textures: HashMap<String, Texture<'a>>,
-    /// Pre-computed outline points for sprites, keyed by "{asset_key}_{frame_index}".
-    /// Generated once when the scene loads (not at startup for all assets).
-    /// Each entry is a Vec of (x, y) pixel coordinates relative to the sprite's top-left.
+    /// Spritesheet region mappings: frame key → (sheet texture key, src_rect).
+    /// When get_texture() is called, if the key has a region entry, the sheet
+    /// texture is returned with the src_rect for that frame.
+    sprite_regions: HashMap<String, (String, sdl2::rect::Rect)>,
+    /// Pre-computed outline points for sprites.
     outlines: HashMap<String, Vec<(i32, i32)>>,
 }
 
@@ -25,6 +27,7 @@ impl<'a> AssetManager<'a> {
         AssetManager {
             texture_creator,
             textures: HashMap::new(),
+            sprite_regions: HashMap::new(),
             outlines: HashMap::new(),
         }
     }
@@ -58,14 +61,70 @@ impl<'a> AssetManager<'a> {
         Ok(())
     }
 
-    /// Get a mutable texture by key (needed to set color mod for FOV darkening).
-    pub fn get_mut(&mut self, key: &str) -> Option<&mut Texture<'a>> {
-        self.textures.get_mut(key)
+    /// Load an image and generate its outline in one pass (single file read).
+    /// Much faster than load_image() + generate_outline_for_image() separately.
+    pub fn load_image_with_outline(&mut self, texture_key: &str, outline_key: &str, path: &str) -> Result<(), String> {
+        if !Path::new(path).exists() {
+            return Err(format!("File not found: {path}"));
+        }
+
+        let img = image::open(path)
+            .map_err(|e| format!("Failed to load {path}: {e}"))?
+            .to_rgba8();
+
+        let (w, h) = img.dimensions();
+
+        // Generate outline from the same pixel data (no second file read)
+        let mut points = Vec::new();
+        for py in 0..h {
+            for px in 0..w {
+                let pixel = img.get_pixel(px, py);
+                if pixel[3] >= 128 { continue; }
+                let is_edge = [(0i32,-1i32),(0,1),(-1,0),(1,0)].iter().any(|&(dx,dy)| {
+                    let nx = px as i32 + dx;
+                    let ny = py as i32 + dy;
+                    if nx < 0 || nx >= w as i32 || ny < 0 || ny >= h as i32 { return false; }
+                    img.get_pixel(nx as u32, ny as u32)[3] >= 128
+                });
+                if is_edge { points.push((px as i32, py as i32)); }
+            }
+        }
+        self.outlines.insert(String::from(outline_key), points);
+
+        // Create SDL2 texture
+        let raw_pixels = img.into_raw();
+        let mut surface = sdl2::surface::Surface::new(w, h, PixelFormatEnum::ABGR8888)
+            .map_err(|e| format!("Failed to create surface: {e}"))?;
+        surface.with_lock_mut(|dst: &mut [u8]| {
+            dst[..raw_pixels.len()].copy_from_slice(&raw_pixels);
+        });
+        let texture = self.texture_creator
+            .create_texture_from_surface(&surface)
+            .map_err(|e| format!("Failed to create texture: {e}"))?;
+        self.textures.insert(String::from(texture_key), texture);
+
+        Ok(())
     }
 
-    /// Check if a texture is loaded (without borrowing mutably).
+    /// Get a mutable texture by key. If the key is a spritesheet region,
+    /// returns the sheet texture (caller should use get_src_rect to get the region).
+    pub fn get_mut(&mut self, key: &str) -> Option<&mut Texture<'a>> {
+        if let Some((sheet_key, _)) = self.sprite_regions.get(key) {
+            let sk = sheet_key.clone();
+            self.textures.get_mut(&sk)
+        } else {
+            self.textures.get_mut(key)
+        }
+    }
+
+    /// Get the src_rect for a spritesheet region (None for individual textures).
+    pub fn get_src_rect(&self, key: &str) -> Option<sdl2::rect::Rect> {
+        self.sprite_regions.get(key).map(|(_, r)| *r)
+    }
+
+    /// Check if a texture or spritesheet region is loaded.
     pub fn has_texture(&self, key: &str) -> bool {
-        self.textures.contains_key(key)
+        self.textures.contains_key(key) || self.sprite_regions.contains_key(key)
     }
 
     /// Get pre-computed outline points for a sprite frame.
@@ -165,8 +224,47 @@ impl<'a> AssetManager<'a> {
         self.outlines.insert(String::from(outline_key), points);
     }
 
+    /// Load a spritesheet PNG and register individual frame keys.
+    /// Layout: 8 columns (directions S,SW,W,NW,N,NE,E,SE) × num_frames rows.
+    /// Each frame is frame_w × frame_h pixels.
+    /// Registers keys as "{key_prefix}_{DIR}_{frame}" for multi-frame,
+    /// or "{key_prefix}_{DIR}" for single-frame sheets.
+    fn load_spritesheet_frames(
+        &mut self,
+        sheet_key: &str,
+        path: &str,
+        key_prefix: &str,
+        frame_w: u32,
+        frame_h: u32,
+        num_frames: u32,
+    ) -> Result<(), String> {
+        self.load_image(sheet_key, path)?;
+
+        let directions = ["S", "SW", "W", "NW", "N", "NE", "E", "SE"];
+        for frame in 0..num_frames {
+            for (dir_idx, dir) in directions.iter().enumerate() {
+                let frame_key = if num_frames == 1 {
+                    format!("{key_prefix}_{dir}")
+                } else {
+                    format!("{key_prefix}_{dir}_{frame}")
+                };
+                let src = sdl2::rect::Rect::new(
+                    (dir_idx as u32 * frame_w) as i32,
+                    (frame * frame_h) as i32,
+                    frame_w,
+                    frame_h,
+                );
+                self.sprite_regions.insert(frame_key, (String::from(sheet_key), src));
+            }
+        }
+        Ok(())
+    }
+
     /// Load real assets where available, generate placeholders for the rest.
+    /// Writes detailed timing to boot_assets.log.
     pub fn generate_placeholders(&mut self) -> Result<(), String> {
+        let mut asset_log = Vec::<(String, std::time::Duration)>::new();
+        let t = std::time::Instant::now();
         // --- Ground tiles (pre-extracted 128x64 PNGs) ---
         // Grass: 3 variants from forest spritesheet
         for i in 1..=3 {
@@ -199,83 +297,84 @@ impl<'a> AssetManager<'a> {
         // Wall placeholder (generated, no sprite yet)
         self.create_tile_texture("tile_wall_top", Color::RGB(160, 160, 160), Color::RGB(140, 140, 140))?;
 
-        // --- Player sprites ---
-        // Idle: 8 directional sprites (N, NE, E, SE, S, SW, W, NW)
+        asset_log.push(("Ground tiles".into(), t.elapsed()));
+        let t = std::time::Instant::now();
+
+        // --- Player sprites (from spritesheets) ---
+        let sheets = "assets/spritesheets";
+        let _ = self.load_spritesheet_frames("_sheet_player_idle", &format!("{sheets}/player_idle.png"), "entity_player", 256, 512, 1);
+        let _ = self.load_spritesheet_frames("_sheet_player_idle_anim", &format!("{sheets}/player_idle_anim.png"), "entity_player_idle", 256, 512, 8);
+        let _ = self.load_spritesheet_frames("_sheet_player_walk", &format!("{sheets}/player_walk.png"), "entity_player_walk", 256, 512, 8);
+
+        // Generate outlines from the static idle spritesheet (read pixels once)
         let directions = ["S", "SW", "W", "NW", "N", "NE", "E", "SE"];
-        for dir in &directions {
-            let key = format!("entity_player_{dir}");
+        for (i, dir) in directions.iter().enumerate() {
             let path = format!("assets/sprites/player/idle/entity_player_{dir}.png");
-            if self.load_image(&key, &path).is_err() {
-                self.create_entity_texture(&key, Color::RGB(200, 60, 60))?;
-            }
+            let outline_key = format!("entity_player_{i}");
+            self.generate_outline_for_image(&outline_key, &path);
         }
 
-        // Walk: 8 directions × 8 frames
-        for dir in &directions {
-            for frame in 0..8 {
-                let key = format!("entity_player_walk_{dir}_{frame}");
-                let path = format!("assets/sprites/player/walk/entity_player_walk_{dir}_{frame}.png");
-                let _ = self.load_image(&key, &path);
-            }
-        }
+        asset_log.push(("Player sprites".into(), t.elapsed()));
+        let t = std::time::Instant::now();
 
-        // --- NPC sprites (individual PNGs per direction, organized in subdirectories) ---
-        // Path: assets/sprites/npc/{variant}/entity_npc_{variant}_{DIR}.png
+        // --- NPC sprites (from spritesheets) ---
         let npc_variants = [
             "african_cr_bk", "african_gn_cr",
             "caucasian_gn_bn", "caucasian_yl_bk",
             "latino_bk_bn", "latino_yl_bk",
         ];
         for variant in &npc_variants {
+            let _ = self.load_spritesheet_frames(
+                &format!("_sheet_npc_{variant}_idle"), &format!("{sheets}/npc_{variant}_idle.png"),
+                &format!("npc_{variant}"), 256, 512, 1);
+            let _ = self.load_spritesheet_frames(
+                &format!("_sheet_npc_{variant}_idle_anim"), &format!("{sheets}/npc_{variant}_idle_anim.png"),
+                &format!("npc_{variant}_idle"), 256, 512, 8);
+            let _ = self.load_spritesheet_frames(
+                &format!("_sheet_npc_{variant}_walk"), &format!("{sheets}/npc_{variant}_walk.png"),
+                &format!("npc_{variant}_walk"), 256, 512, 8);
+
+            // Outlines from static idle (individual PNGs, read once each)
             for (i, dir) in directions.iter().enumerate() {
-                // Idle
-                let key = format!("npc_{variant}_{dir}");
                 let path = format!("assets/sprites/npc/{variant}/entity_npc_{variant}_{dir}.png");
-                if self.load_image(&key, &path).is_err() {
-                    self.create_entity_texture(&key, Color::RGB(60, 60, 200))?;
-                }
                 let outline_key = format!("npc_{variant}_{i}");
                 self.generate_outline_for_image(&outline_key, &path);
-
-                // Walk (optional — silently skip if files don't exist)
-                for frame in 0..8 {
-                    let wkey = format!("npc_{variant}_walk_{dir}_{frame}");
-                    let wpath = format!("assets/sprites/npc/{variant}/walk/entity_npc_{variant}_walk_{dir}_{frame}.png");
-                    let _ = self.load_image(&wkey, &wpath);
-                }
             }
         }
-        // Legacy NPC fallback (placeholder)
         self.create_entity_texture("entity_npc", Color::RGB(60, 60, 200))?;
 
-        // --- Enemy sprites (individual PNGs per direction, organized in subdirectories) ---
-        // Path: assets/sprites/enemy/{type}/entity_{type}_{DIR}.png
+        asset_log.push(("NPC sprites".into(), t.elapsed()));
+        let t = std::time::Instant::now();
+
+        // --- Enemy sprites (from spritesheets) ---
         let enemy_types = [("orc", "entity_orc")];
-        for (enemy_type, file_prefix) in &enemy_types {
+        for (enemy_type, _file_prefix) in &enemy_types {
+            let _ = self.load_spritesheet_frames(
+                &format!("_sheet_enemy_{enemy_type}_idle"), &format!("{sheets}/enemy_{enemy_type}_idle.png"),
+                &format!("enemy_{enemy_type}"), 256, 512, 1);
+            let _ = self.load_spritesheet_frames(
+                &format!("_sheet_enemy_{enemy_type}_idle_anim"), &format!("{sheets}/enemy_{enemy_type}_idle_anim.png"),
+                &format!("enemy_{enemy_type}_idle"), 256, 512, 8);
+            let _ = self.load_spritesheet_frames(
+                &format!("_sheet_enemy_{enemy_type}_walk"), &format!("{sheets}/enemy_{enemy_type}_walk.png"),
+                &format!("enemy_{enemy_type}_walk"), 256, 512, 8);
+
             for (i, dir) in directions.iter().enumerate() {
-                // Idle
-                let key = format!("enemy_{enemy_type}_{dir}");
-                let path = format!("assets/sprites/enemy/{enemy_type}/{file_prefix}_{dir}.png");
-                if self.load_image(&key, &path).is_err() {
-                    self.create_entity_texture(&key, Color::RGB(200, 60, 200))?;
-                }
+                let path = format!("assets/sprites/enemy/{enemy_type}/entity_{enemy_type}_{dir}.png");
                 let outline_key = format!("enemy_{enemy_type}_{i}");
                 self.generate_outline_for_image(&outline_key, &path);
-
-                // Walk (optional — silently skip if files don't exist)
-                for frame in 0..8 {
-                    let wkey = format!("enemy_{enemy_type}_walk_{dir}_{frame}");
-                    let wpath = format!("assets/sprites/enemy/{enemy_type}/walk/{file_prefix}_walk_{dir}_{frame}.png");
-                    let _ = self.load_image(&wkey, &wpath);
-                }
             }
         }
 
+        asset_log.push(("Enemy sprites".into(), t.elapsed()));
+        let t = std::time::Instant::now();
         // --- Entity shadow ---
         // Shared shadow sprite rendered beneath all entities.
         // Will be 256×128 when re-rendered; currently 128×64.
         let _ = self.load_image("entity_shadow", "assets/sprites/player/entity_shadow.png");
 
+        asset_log.push(("Shadow + misc".into(), t.elapsed()));
+        let t = std::time::Instant::now();
         // --- Decoration sprites ---
         for i in 1..=8 {
             let _ = self.load_image(
@@ -283,6 +382,19 @@ impl<'a> AssetManager<'a> {
                 &format!("assets/sprites/decorations/grass_tuft_{i:02}.png"),
             );
         }
+
+        asset_log.push(("Decorations".into(), t.elapsed()));
+
+        // Append asset loading timing log
+        let mut log_text = String::from("\nAsset loading breakdown:\n");
+        for (label, dur) in &asset_log {
+            log_text += &format!("  {:<30} {:.3}s\n", label, dur.as_secs_f64());
+        }
+        use std::io::Write;
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("boot_assets.log") {
+            let _ = f.write_all(log_text.as_bytes());
+        }
+        println!("{log_text}");
 
         Ok(())
     }

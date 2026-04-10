@@ -77,7 +77,13 @@
       "Bash(identify \"C:/Users/Urano/Documents/repositorios/rust/assets/sprites/player/walk/entity_player_walk_S_0.png\")",
       "Bash(identify \"C:/Users/Urano/Documents/repositorios/rust/assets/sprites/enemy/orc/walk/entity_orc_walk_S_0.png\")",
       "Bash(python3 -c \"from PIL import Image; img=Image.open\\(r'C:\\\\Users\\\\Urano\\\\Documents\\\\repositorios\\\\rust\\\\assets\\\\sprites\\\\player\\\\idle\\\\entity_player_S.png'\\); print\\('idle:', img.size\\)\")",
-      "Bash(grep -v \"^$\")"
+      "Bash(grep -v \"^$\")",
+      "Bash(ls:*)",
+      "Bash(mkdir -p models animations)",
+      "Bash(mv Body_Tiefling_lowpoly.fbx models/body_tiefling_lowpoly.fbx)",
+      "Bash(mv Body_Human_lowpoly.fbx models/body_human_lowpoly.fbx)",
+      "Bash(mv Body_Orc_lowpoly.fbx models/body_orc_lowpoly.fbx)",
+      "Bash(mv Walking.fbx animations/walk_tiefling.fbx)"
     ]
   }
 }

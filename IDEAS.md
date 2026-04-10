@@ -486,3 +486,40 @@ Aumentar la resolución de los sprites de personajes para mayor nitidez, especia
 **Para el Claude de assets:** regenerar todos los sprites con el mismo setup de cámara (ortográfica iso, X=60°, Z=45°) pero a mayor resolución. Los NPCs pasan de spritesheets 1024×256 a 2048×512 (o 4096×1024). Los nombres y la convención no cambian.
 
 **Ubicación en código:** Solo tocar `config.rs` (ENTITY_SCALE) y posiblemente `assets.rs` si se implementa carga lazy.
+
+---
+
+## 18. Sprites de idle animado (respiracion/movimiento sutil) — `pendiente` — **P4**
+
+Reemplazar el idle estatico actual (1 frame por direccion = 8 PNGs) con un idle animado que muestre respiracion y micro-movimientos, para que los personajes se sientan vivos cuando estan parados. El formato es identico al walk: 8 direcciones x 8 frames = 64 PNGs por personaje.
+
+**Concepto:** en lugar de una pose REST congelada, el personaje reproduce un loop sutil de breathing idle (expansion del pecho, leve shift de peso, movimiento de brazos). La animacion debe ser sutil y ciclica, no dramatica — el jugador no deberia confundirla con una accion.
+
+**Pipeline de assets (Blender + Mixamo):**
+
+1. Descargar la animacion "Breathing Idle" (o "Idle") de Mixamo como FBX para cada body type:
+   - Tiefling (player): usar el body lowpoly exportado a Mixamo, aplicar "Breathing Idle", descargar FBX
+   - Orco: mismo proceso con el body del orco
+   - Humano: mismo proceso con el body humano (la misma animacion sirve para las 6 variantes de NPC humano, solo se cambian materiales)
+2. Importar en Blender con `automatic_bone_orientation=True` (igual que Walking.fbx)
+3. Eliminar root motion (fcurves de location del Hips bone) si lo tiene
+4. Renderizar 64 sprites por personaje: 8 direcciones x 8 frames muestreados del ciclo de la action
+5. Para NPCs humanos: renderizar la misma animacion 6 veces cambiando materiales (skin/top/bottom) por variante
+
+**Naming de archivos:**
+- Player: `entity_player_idle_{cardinal}_{frame}.png` donde cardinal = S, SW, W, NW, N, NE, E, SE y frame = 0..7
+  - Ubicacion: `assets/sprites/player/idle/`
+- Orco: `entity_orc_idle_{cardinal}_{frame}.png`
+  - Ubicacion: `assets/sprites/enemy/orc/`
+- NPCs humanos: `entity_npc_{ethnicity}_{top}_{bottom}_idle_{cardinal}_{frame}.png`
+  - Ubicacion: `assets/sprites/npc/{ethnicity}_{top}_{bottom}/`
+
+**Archivos actuales (idle estatico):** los PNGs actuales de idle estatico (`entity_player_S.png`, etc.) se pueden mantener como fallback durante la transicion. Cuando el idle animado este listo y validado, se eliminan.
+
+**Cambios en codigo (Rust):**
+- `config.rs`: agregar constantes `IDLE_ANIM_FRAMES: usize = 8` y `TICKS_PER_IDLE_ANIM_FRAME: u64` (mas lento que walk — apuntar a ~4-6 FPS en vez de los 8+ FPS del walk, para que se vea relajado)
+- `render/assets.rs`: cargar los 64 PNGs de idle animado por personaje, igual que se cargan los de walk
+- `render/renderer.rs`: cuando una entidad esta stationary (no caminando), ciclar por los frames de idle animado en vez de mostrar un frame fijo. La logica es identica a la del walk animation cycling pero con el timer mas lento
+- `core/entity.rs`: agregar un campo `idle_anim_tick: u64` (o reusar `anim_tick` existente) para trackear el frame actual del idle animado. Opcionalmente randomizar el frame inicial por entidad para que no esten todos sincronizados
+
+**Ubicacion en codigo:** Principalmente `render/renderer.rs` (seleccion de frame), `render/assets.rs` (carga), `config.rs` (constantes de timing). Sin cambios en la logica de `core/game_state.rs`.

@@ -171,6 +171,7 @@ pub struct Entity {
     // Walk animation state
     pub anim_tick: u32,       // ticks since animation started
     pub anim_moving: bool,    // true while visually in motion (lerp not finished)
+    pub idle_anim_tick: u32,  // ticks for idle animation cycling (randomized start per entity)
     // NPC-specific state
     pub npc_variant: Option<NpcVariant>,  // which sprite set to use (None for non-NPCs)
     pub enemy_type: Option<EnemyType>,    // which enemy sprite set (None for non-enemies)
@@ -201,6 +202,7 @@ impl Entity {
             facing: Direction::S,
             anim_tick: 0,
             anim_moving: false,
+            idle_anim_tick: rand::thread_rng().gen_range(0..config::IDLE_ANIM_FRAMES * config::TICKS_PER_IDLE_ANIM_FRAME),
             npc_variant: if kind == EntityKind::Npc { Some(NpcVariant::random()) } else { None },
             enemy_type: if kind == EntityKind::Enemy { Some(EnemyType::Orc) } else { None },
             patrol_center: None,
@@ -281,10 +283,19 @@ impl Entity {
         self.path_index = 0;
     }
 
+    /// Current idle animation frame index (0..7). Always cycling.
+    /// ticks_per_frame is configurable from the debug menu.
+    pub fn idle_frame(&self, ticks_per_frame: u32) -> u32 {
+        let tpf = ticks_per_frame.max(1);
+        (self.idle_anim_tick / tpf) % config::IDLE_ANIM_FRAMES
+    }
+
     /// Current walk animation frame index (0..7), or None if idle.
-    pub fn walk_frame(&self) -> Option<u32> {
+    /// ticks_per_frame is configurable from the debug menu.
+    pub fn walk_frame(&self, ticks_per_frame: u32) -> Option<u32> {
         if self.anim_moving {
-            Some((self.anim_tick / config::TICKS_PER_ANIM_FRAME) % config::WALK_ANIM_FRAMES)
+            let tpf = ticks_per_frame.max(1);
+            Some((self.anim_tick / tpf) % config::WALK_ANIM_FRAMES)
         } else {
             None
         }
@@ -333,6 +344,9 @@ impl Entity {
             self.anim_moving = false;
             self.anim_tick = 0;
         }
+
+        // Idle animation always ticks (even while walking, so it's ready when stopping)
+        self.idle_anim_tick = self.idle_anim_tick.wrapping_add(1);
 
         // Tick down move cooldown
         if self.move_timer > 0 {

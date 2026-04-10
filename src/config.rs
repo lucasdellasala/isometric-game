@@ -60,6 +60,13 @@ pub const WALK_ANIM_FRAMES: u32 = 8;
 /// Ticks before advancing to the next walk animation frame.
 pub const TICKS_PER_ANIM_FRAME: u32 = 4;
 
+/// Total frames in the idle animation cycle.
+pub const IDLE_ANIM_FRAMES: u32 = 8;
+
+/// Ticks before advancing to the next idle animation frame.
+/// Slower than walk (~2.5 FPS) for a relaxed breathing feel.
+pub const TICKS_PER_IDLE_ANIM_FRAME: u32 = 24;
+
 /// NPC idle rotation: minimum ticks before random facing change (3 sec @ 60fps).
 pub const IDLE_ROTATE_MIN_TICKS: u32 = 180;
 

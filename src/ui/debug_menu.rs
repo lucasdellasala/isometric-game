@@ -59,6 +59,10 @@ pub struct DebugMenu {
     pub scale_enemy_orc: f64,
     pub shadow_scale: f64,
     pub shadow_offset_y: i32,
+
+    // --- Animation speed settings ---
+    pub ticks_per_walk_frame: u32,
+    pub ticks_per_idle_frame: u32,
 }
 
 impl DebugMenu {
@@ -93,6 +97,9 @@ impl DebugMenu {
             scale_enemy_orc: config::SCALE_ENEMY_ORC,
             shadow_scale: config::SHADOW_SCALE,
             shadow_offset_y: config::SHADOW_OFFSET_Y,
+
+            ticks_per_walk_frame: config::TICKS_PER_ANIM_FRAME,
+            ticks_per_idle_frame: config::TICKS_PER_IDLE_ANIM_FRAME,
         }
     }
 
@@ -129,6 +136,10 @@ impl DebugMenu {
     "enemy_orc": {:.2},
     "shadow_scale": {:.2},
     "shadow_offset_y": {}
+  }},
+  "animation": {{
+    "ticks_per_walk_frame": {},
+    "ticks_per_idle_frame": {}
   }}
 }}"#,
             self.pp_mode.label(), self.pp_scope.label(),
@@ -141,6 +152,7 @@ impl DebugMenu {
             self.fov_radius, self.camera_zoom, self.show_pathfinding,
             self.entity_base_scale, self.scale_player, self.scale_npc,
             self.scale_enemy_orc, self.shadow_scale, self.shadow_offset_y,
+            self.ticks_per_walk_frame, self.ticks_per_idle_frame,
         );
 
         if let Err(e) = std::fs::write(path, &json) {
@@ -235,6 +247,8 @@ impl DebugMenu {
                 format!("Orc scale:        {:.2}", self.scale_enemy_orc),
                 format!("Shadow scale:     {:.2}", self.shadow_scale),
                 format!("Shadow offset Y:  {}", self.shadow_offset_y),
+                format!("Walk anim speed:  {} ticks/frame", self.ticks_per_walk_frame),
+                format!("Idle anim speed:  {} ticks/frame", self.ticks_per_idle_frame),
             ],
             ActiveSubmenu::TopLevel => vec![],
         }
@@ -325,6 +339,8 @@ impl DebugMenu {
                 3 => self.scale_enemy_orc = ((self.scale_enemy_orc - 0.05) * 100.0).round() / 100.0,
                 4 => self.shadow_scale = ((self.shadow_scale - 0.05) * 100.0).round() / 100.0,
                 5 => self.shadow_offset_y -= 1,
+                6 => self.ticks_per_walk_frame = self.ticks_per_walk_frame.saturating_sub(1).max(1),
+                7 => self.ticks_per_idle_frame = self.ticks_per_idle_frame.saturating_sub(1).max(1),
                 _ => {}
             },
             _ => {}
@@ -374,6 +390,8 @@ impl DebugMenu {
                 3 => self.scale_enemy_orc = ((self.scale_enemy_orc + 0.05) * 100.0).round() / 100.0,
                 4 => self.shadow_scale = ((self.shadow_scale + 0.05) * 100.0).round() / 100.0,
                 5 => self.shadow_offset_y += 1,
+                6 => self.ticks_per_walk_frame += 1,
+                7 => self.ticks_per_idle_frame += 1,
                 _ => {}
             },
             _ => {}

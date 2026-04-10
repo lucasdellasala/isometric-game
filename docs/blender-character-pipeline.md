@@ -805,6 +805,45 @@ SAMPLE_FRAMES = [1, 5, 9, 13, 17, 21, 25, 29]
 
 Las fcurves de location del Hips bone (`pose.bones["mixamorig:Hips"].location`) fueron eliminadas permanentemente de la action. Sin embargo, el Hips mantiene un offset fijo de ~0.84 en -Y inherente a la pose. El tracking de la cámara/sombra al Hips compensa este offset.
 
+### Animated idle (TODO)
+
+Mismo pipeline que walk pero con una animacion de "Breathing Idle" de Mixamo en vez de "Walking".
+
+**Pasos:**
+
+1. **Descargar FBX de Mixamo:** para cada body type (tiefling, orco, humano), exportar el body lowpoly a Mixamo, buscar "Breathing Idle" o "Idle", descargar el FBX con la animacion aplicada.
+
+2. **Importar en Blender:**
+   ```python
+   bpy.ops.import_scene.fbx(
+       filepath=r"C:\...\BreathingIdle.fbx",
+       automatic_bone_orientation=True,
+   )
+   ```
+   Igual que Walking.fbx. Eliminar el mesh generico de Mixamo que viene con el FBX.
+
+3. **Limpiar root motion** (si lo tiene): eliminar fcurves de location del Hips bone, igual que se hizo para walk:
+   ```python
+   action = arm.animation_data.action
+   to_remove = [fc for fc in action.fcurves
+                if fc.data_path == 'pose.bones["mixamorig:Hips"].location']
+   for fc in to_remove:
+       action.fcurves.remove(fc)
+   ```
+
+4. **Configuracion de render:** usar el mismo `ortho_scale` que walk (el bbox consistente ya calculado cubre ambas animaciones — idle tiene menos movimiento que walk, asi que si walk entra, idle tambien entra). Misma camara, misma iluminacion, mismo resolution (128x256 o 256x512).
+
+5. **Muestreo de frames:** misma logica que walk — 8 frames equiespaciados del ciclo de la action. Si la action tiene rango [1, N], muestrear `[1, 1+step, 1+2*step, ..., 1+7*step]` donde `step = N // 8`.
+
+6. **Render batch:** para cada direccion (rotar pivote 0/45/90/.../315 grados), para cada frame muestreado, trackear Hips para centrar camara y sombra, renderizar PNG.
+
+7. **Output:**
+   - Player (tiefling): `assets/sprites/player/idle/entity_player_idle_{cardinal}_{frame}.png`
+   - Orco: `assets/sprites/enemy/orc/entity_orc_idle_{cardinal}_{frame}.png`
+   - NPCs humanos: para cada variante, cambiar materiales (skin/top/bottom) y renderizar a `assets/sprites/npc/{variant}/entity_npc_{variant}_idle_{cardinal}_{frame}.png`
+
+8. **Diferencia clave con walk:** la animacion de breathing idle es mucho mas sutil (expansion de pecho, micro-shift de peso). Si los 8 frames muestreados se ven casi identicos, considerar usar un muestreo mas espaciado o una animacion con mas movimiento (ej. "Happy Idle" o "Weight Shift" de Mixamo).
+
 ---
 
 ## 9. Skill relacionada

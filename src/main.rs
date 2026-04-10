@@ -27,12 +27,35 @@ const WINDOW_TITLE: &str = "Isometric Game";
 const TICKS_PER_SECOND: u32 = 60;
 const TICK_DURATION: Duration = Duration::from_nanos(1_000_000_000 / TICKS_PER_SECOND as u64);
 
+fn chrono_timestamp() -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    format!("{}", now.as_secs())
+}
+
+fn append_to_file(path: &str, content: &str) {
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = f.write_all(content.as_bytes());
+    }
+}
+
 fn main() {
+    let boot_start = Instant::now();
+    let mut boot_log = Vec::<(String, Duration)>::new();
+
     // --- Load map and create game state ---
+    let t = Instant::now();
     let tilemap = Tilemap::from_file("assets/maps/map.json").expect("Failed to load map");
+    boot_log.push(("Load tilemap".into(), t.elapsed()));
+
+    let t = Instant::now();
     let mut state = GameState::new(tilemap);
+    boot_log.push(("Create GameState".into(), t.elapsed()));
 
     // --- Initialize SDL2 ---
+    let t = Instant::now();
     let sdl_context = sdl2::init().expect("Failed to initialize SDL2");
     let video_subsystem = sdl_context.video().expect("Failed to initialize video");
 
@@ -51,15 +74,30 @@ fn main() {
         .expect("Failed to create canvas");
 
     let mut event_pump = sdl_context.event_pump().expect("Failed to get event pump");
+    boot_log.push(("Init SDL2 + window".into(), t.elapsed()));
 
     // --- Asset Manager ---
     let texture_creator = canvas.texture_creator();
     let mut assets = AssetManager::new(&texture_creator);
+    let t = Instant::now();
     assets.generate_placeholders().expect("Failed to generate placeholder textures");
+    boot_log.push(("Load all assets + outlines".into(), t.elapsed()));
 
     // --- Text Renderer ---
+    let t = Instant::now();
     let mut text_renderer = TextRenderer::new(&texture_creator, "assets/fonts/default.ttf")
         .expect("Failed to load font");
+    boot_log.push(("Load font".into(), t.elapsed()));
+
+    // Append boot timing log with timestamp
+    let total = boot_start.elapsed();
+    let mut log_text = format!("\n--- Boot @ {} ---\nBoot time: {:.2}s\n\n",
+        chrono_timestamp(), total.as_secs_f64());
+    for (label, dur) in &boot_log {
+        log_text += &format!("  {:<30} {:.3}s\n", label, dur.as_secs_f64());
+    }
+    append_to_file("boot_timing.log", &log_text);
+    println!("{log_text}");
 
     // --- Client-only state ---
     let mut camera = Camera::new();

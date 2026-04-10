@@ -126,6 +126,13 @@ All character sprites (player, NPC, enemy) share the same camera and format:
 - `_SW` = screen down-left, `_SE` = screen down-right, `_NW` = screen up-left, `_NE` = screen up-right
 - Location: `assets/sprites/player/idle/`
 
+**Animated idle (planned):**
+- Same format as walk: 8 directions x 8 frames = 64 individual PNGs
+- Naming: `entity_player_idle_{cardinal}_{frame}.png` where cardinal = S, SW, W, NW, N, NE, E, SE and frame = 0..7
+- Will replace current static idle when implemented
+- Animation source: "Breathing Idle" from Mixamo, same pipeline as walk sprites
+- Location: `assets/sprites/player/idle/` (same folder, coexisting with static idle during transition)
+
 **Player walk sprites:**
 - Same size and camera as idle (128×256 px RGBA)
 - 8 directions × 8 frames = 64 PNGs
